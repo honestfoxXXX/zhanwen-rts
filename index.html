@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#070c16" />
+  <title>战纹 · 竖屏 RTS</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='8' width='16' height='16' rx='3' transform='rotate(45 16 16)' fill='%2322d3ee'/%3E%3C/svg%3E" />
+  <script type="module" crossorigin src="./assets/index-BmDQRvzP.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DZvMcVAj.css">
+</head>
+<body>
+  <div id="stage">
+    <div id="frame">
+      <canvas id="game"></canvas>
+
+      <!-- 游戏内 HUD -->
+      <div id="hud" class="hidden">
+        <div id="topbar">
+          <div class="res"><span class="gem">◆</span><b id="resCrystal">0</b><span id="resIncome">+0/s</span></div>
+          <div class="pop">兵力 <b id="resPop">0/40</b><span id="resQueue"></span></div>
+          <div class="clock" id="resTime">0:00</div>
+          <button id="btnPause" class="icon" aria-label="暂停">‖</button>
+        </div>
+        <div id="armyBar" title="各方军力对比"></div>
+        <div id="goal"></div>
+        <div id="alertBanner" class="hidden"></div>
+        <div id="selchip" class="hidden"><span id="selCount">已选 0</span><button id="btnDesel" aria-label="取消选择">✕</button></div>
+        <div id="toasts"></div>
+        <div id="dock">
+          <div class="row hidden" id="placeRow">
+            <button id="btnPlaceNo" class="slim no">✕ 取消</button>
+            <div id="placeHint">放置</div>
+            <button id="btnPlaceOk" class="slim ok">✓ 建造</button>
+          </div>
+          <div class="row hidden" id="rowCommand">
+            <button class="card wide" id="btnHold"><span>固守</span></button>
+            <button class="card wide" id="btnRetreat"><span>撤退</span></button>
+          </div>
+          <div class="row" id="rowBuild">
+            <button class="card" data-build="mine"><i>◆</i><span>矿场</span><em>100</em></button>
+            <button class="card" data-build="barracks"><i>▣</i><span>兵营</span><em>150</em></button>
+            <button class="card" data-build="tower"><i>▲</i><span>箭塔</span><em>120</em></button>
+          </div>
+          <div class="row" id="rowUnit">
+            <button class="card" data-train="infantry"><i>●</i><span>步兵</span><em>50</em></button>
+            <button class="card" data-train="archer"><i>◗</i><span>弓手</span><em>80</em></button>
+            <button class="card" data-train="heavy"><i>⬢</i><span>重装</span><em>200</em></button>
+            <button class="card wide" id="btnAll"><span>全选</span></button>
+            <button class="card wide" id="btnRally"><span>集结</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主菜单 -->
+      <div id="menu" class="screen">
+        <h1>战 纹</h1>
+        <p class="sub">竖屏即时战略 · 称霸战场，扫平所有敌方主基地</p>
+        <div class="seg" id="diffSeg">
+          <button data-d="easy">简单</button>
+          <button data-d="normal" class="on">普通</button>
+          <button data-d="hard">困难</button>
+        </div>
+        <div class="seg" id="modeSeg">
+          <button data-p="2" class="on">1v1 对战</button>
+          <button data-p="3">3 人混战</button>
+        </div>
+        <button id="btnStart" class="primary">开 战</button>
+        <ul class="hint">
+          <li>◆ 占领水晶矿扩张经济，收入即兵力</li>
+          <li>⚔ 点选部队 → 点目标，移动即进攻</li>
+          <li>📱 手机触屏与电脑鼠标均可游玩</li>
+        </ul>
+      </div>
+
+      <!-- 暂停 -->
+      <div id="pauseScr" class="screen hidden">
+        <h2>已暂停</h2>
+        <button id="btnResume" class="primary">继续</button>
+        <button id="btnRestart">重新开始</button>
+        <button id="btnSound">音效：开</button>
+        <button id="btnQuit">返回菜单</button>
+      </div>
+
+      <!-- 结算 -->
+      <div id="resultScr" class="screen hidden">
+        <h2 id="resultTitle">胜利</h2>
+        <p id="resultStats"></p>
+        <ul id="resultDetail"></ul>
+        <button id="btnAgain" class="primary">再来一局</button>
+        <button id="btnMenu2">返回菜单</button>
+      </div>
+
+      <!-- 首次提示 -->
+      <div id="tips" class="screen hidden">
+        <h3>上手提示</h3>
+        <p id="tipsMap" class="sub"></p>
+        <ul>
+          <li>👆 点选部队后点地图下令；双击部队选中屏幕内全部同类</li>
+          <li>◆ 建矿场占领水晶矿，矿多兵多</li>
+          <li>⚔ 所有移动都是进攻令，部队沿途自动交战</li>
+          <li>🚩「集结」设定新兵集结点；双击兵营可单独给它设集结点</li>
+          <li>🛡 选中部队后可下「固守」（不追击）或「撤退」（撤回主基地）</li>
+          <li>⚔ 克制三角：弓手 › 重装 › 步兵 › 弓手</li>
+        </ul>
+        <button id="btnTipsOk" class="primary">明白了</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
