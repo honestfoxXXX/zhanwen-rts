@@ -99,6 +99,34 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.arc(x, y, r, 0, Math.PI * 2);
     g.fill();
   }
+  // 野花：白菊为主，少量野罂粟点缀
+  for (let i = 0; i < 110; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const poppy = i % 6 === 0;
+    g.fillStyle = poppy
+      ? `rgba(214,80,80,${0.25 + rnd() * 0.15})`
+      : `rgba(238,232,200,${0.25 + rnd() * 0.18})`;
+    g.beginPath();
+    g.arc(x, y, poppy ? 1.2 + rnd() * 0.9 : 0.9 + rnd() * 0.9, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // 泥土路：每个出生点一条弯路通往地图质心 —— 1v1 是两条主路在前线会合，
+  // 三方是三条路汇聚"王冠之地"。画在岩石之前，路被巨石截断才自然。
+  const roadCx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
+  const roadCy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+  for (const sp of map.spawns) {
+    const mx = (sp.pos.x + roadCx) / 2 + (sp.pos.y - roadCy) * 0.08;
+    const my = (sp.pos.y + roadCy) / 2 - (sp.pos.x - roadCx) * 0.08;
+    for (const [c, lw] of [['rgba(60,42,24,0.35)', 30], ['rgba(138,106,66,0.55)', 22]] as const) {
+      g.strokeStyle = c;
+      g.lineWidth = lw;
+      g.beginPath();
+      g.moveTo(sp.pos.x, sp.pos.y);
+      g.quadraticCurveTo(mx, my, roadCx, roadCy);
+      g.stroke();
+    }
+  }
 
   // ---- 前线（1v1）：虚线 + 箭头纹；三方图改为标出三方等距的必争质心 ----
   if (map.players === 2) {
@@ -122,7 +150,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fillStyle = 'rgba(201,162,39,0.55)';
     g.font = '600 13px sans-serif';
     g.textAlign = 'center';
-    g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
+    g.fillText('—— 国 境 线 ——', MAP_W / 2, MAP_H / 2 - 10);
   } else {
     const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
     const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
@@ -136,7 +164,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fillStyle = 'rgba(201,162,39,0.55)';
     g.font = '600 12px sans-serif';
     g.textAlign = 'center';
-    g.fillText('必 争 之 地', tcx, tcy - 44);
+    g.fillText('王 冠 之 地', tcx, tcy - 44);
   }
 
   // ---- 岩石：不规则多面体（投影 + 亮面 + 裂纹），两种变体避免明显平铺 ----
@@ -185,6 +213,17 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.lineTo(x + 20, y + 22);
     g.lineTo(x + 16, y + TILE - 12);
     g.stroke();
+    // 顶部苔藓斑：1-2 块，随格子变体
+    g.fillStyle = 'rgba(110,150,80,0.25)';
+    g.beginPath();
+    g.ellipse(x + (v === 0 ? TILE * 0.38 : TILE * 0.62), y + (v === 0 ? 10 : 8), v === 0 ? 7 : 8, 4, v === 0 ? 0.3 : -0.2, 0, Math.PI * 2);
+    g.fill();
+    if (v === 0) {
+      g.fillStyle = 'rgba(110,150,80,0.18)';
+      g.beginPath();
+      g.ellipse(x + TILE * 0.66, y + 20, 5, 3, -0.4, 0, Math.PI * 2);
+      g.fill();
+    }
   }
 
   // ---- 基地平台（HQ 底座）：阵营色光晕 + 虚线边界，按地图出生点绘制 ----
@@ -271,7 +310,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
 
   if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
 
-  // 水晶矿点
+  // 金矿脉矿点：石堆上三颗金块（矿是"挖出来"的，不是浮在空中的图标）
   for (const n of w.nodes) {
     if (n.mineId !== null) continue;
     const pulse = 1 + 0.1 * Math.sin(w.time * 3 + n.id * 1.7);
@@ -284,15 +323,28 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.ellipse(0, 8, 14, 5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.scale(pulse, pulse);
+    // 石堆
+    ctx.fillStyle = '#57544d';
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 12, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 三颗金块
     ctx.shadowColor = 'rgba(240,194,78,0.8)';
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = 12;
     ctx.fillStyle = C.crystal;
-    diamond(ctx, 0, 0, 12);
-    ctx.fill();
+    for (const [gx, gy, gr] of [[-4, 1, 5], [4, 2, 4], [0, -4, 4]] as const) {
+      ctx.beginPath();
+      ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    diamond(ctx, 0, -2, 7);
-    ctx.fill();
+    // 高光
+    ctx.fillStyle = '#ffe9a8';
+    for (const [gx, gy] of [[-5.5, -0.5], [3, 1], [-1, -5]] as const) {
+      ctx.beginPath();
+      ctx.arc(gx, gy, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
