@@ -36,9 +36,9 @@ interface UnitShape {
 }
 
 export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
-  infantry: { shape: 'circle', rMul: 1.0, emblem: 'boss', bob: 0.9 },
-  archer: { shape: 'arrow', rMul: 1.15, emblem: 'quiver', bob: 0.7 },
-  heavy: { shape: 'heater', rMul: 1.12, emblem: 'cross', bob: 0 },
+  infantry: { shape: 'circle', rMul: 1.05, emblem: 'boss', bob: 0.9 },
+  archer: { shape: 'arrow', rMul: 1.2, emblem: 'quiver', bob: 0.7 },
+  heavy: { shape: 'heater', rMul: 1.18, emblem: 'cross', bob: 0 },
 };
 
 function shapePath(g: CanvasRenderingContext2D, kind: ShapeKind, r: number): void {
@@ -161,17 +161,95 @@ export function drawUnitBody(
   shapePath(g, def.shape, vr);
   g.stroke();
 
-  // 朝向指针
-  g.strokeStyle = SIDE_DARK[side];
-  g.lineWidth = 2.4;
-  g.beginPath();
-  g.moveTo(vr * 0.2, 0);
-  g.lineTo(vr + 4, 0);
-  g.stroke();
+  // 职业道具（随朝向旋转）：剑盾 / 弓箭 / 骑枪 —— 侧影 + 道具双通道读兵种
+  const steel = '#e3e8f0', steelDark = '#3d434f', wood = '#6b4a2a';
+  if (type === 'infantry') {
+    // 剑：深描边 + 亮刃 + 护手
+    g.strokeStyle = steelDark;
+    g.lineWidth = 2.8;
+    g.beginPath();
+    g.moveTo(vr * 0.5, 0);
+    g.lineTo(vr * 1.5, 0);
+    g.stroke();
+    g.strokeStyle = steel;
+    g.lineWidth = 1.3;
+    g.beginPath();
+    g.moveTo(vr * 0.55, 0);
+    g.lineTo(vr * 1.45, 0);
+    g.stroke();
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(vr * 0.62, -2.6);
+    g.lineTo(vr * 0.62, 2.6);
+    g.stroke();
+    // 侧持圆盾：木盾 + 亮盾心
+    g.fillStyle = '#8a6f42';
+    g.beginPath();
+    g.arc(0, vr * 0.62, vr * 0.42, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 1.4;
+    g.stroke();
+    g.fillStyle = 'rgba(255,244,220,0.85)';
+    g.beginPath();
+    g.arc(0, vr * 0.62, vr * 0.14, 0, Math.PI * 2);
+    g.fill();
+  } else if (type === 'archer') {
+    // 弓：木弧 + 弦 + 搭箭
+    g.strokeStyle = wood;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(vr * 0.42, 0, vr * 0.85, -1.05, 1.05);
+    g.stroke();
+    const bx = vr * 0.42 + vr * 0.85 * Math.cos(1.05);
+    const by = vr * 0.85 * Math.sin(1.05);
+    g.strokeStyle = 'rgba(244,234,214,0.85)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(bx, -by);
+    g.lineTo(bx, by);
+    g.stroke();
+    g.strokeStyle = steel;
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(vr * 0.1, 0);
+    g.lineTo(vr * 1.1, 0);
+    g.stroke();
+  } else {
+    // 骑枪：长杆 + 钢尖 + 配箍
+    g.strokeStyle = '#5d4327';
+    g.lineWidth = 2.6;
+    g.beginPath();
+    g.moveTo(-vr * 0.2, 0);
+    g.lineTo(vr * 1.45, 0);
+    g.stroke();
+    g.fillStyle = steel;
+    g.beginPath();
+    g.moveTo(vr * 1.4, -1.6);
+    g.lineTo(vr * 1.9, 0);
+    g.lineTo(vr * 1.4, 1.6);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(vr * 0.42, -2.2);
+    g.lineTo(vr * 0.42, 2.2);
+    g.stroke();
+  }
   g.restore();
 
   // 徽记不随朝向旋转 —— 这是剪影能否稳定辨认的关键
   drawEmblem(g, def.emblem, vr, side);
+  // 重装盔羽：竖直，不随朝向旋转
+  if (type === 'heavy') {
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(0, -vr * 0.95);
+    g.quadraticCurveTo(vr * 0.22, -vr * 1.35, 0, -vr * 1.65);
+    g.stroke();
+  }
   g.restore();
 }
 
@@ -205,6 +283,16 @@ export function drawBuildingIcon(
       g.fillRect(-6.5, -5, 3.2, 3);
       g.fillRect(-1.6, -5, 3.2, 3);
       g.fillRect(3.3, -5, 3.2, 3);
+      // 石缝
+      g.strokeStyle = 'rgba(20,14,8,0.35)';
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(-6, 5);
+      g.lineTo(6, 5);
+      g.stroke();
+      // 门洞
+      g.fillStyle = 'rgba(20,14,8,0.7)';
+      g.fillRect(-1.6, 7, 3.2, 5);
       g.strokeStyle = SIDE_DARK[side];
       g.lineWidth = 1.6;
       g.beginPath();
@@ -222,31 +310,39 @@ export function drawBuildingIcon(
       break;
     }
     case 'mine': {
-      // 金矿：X 井架 + 金块堆
+      // 金矿：土堆 + 坑口 + 木井架 + 金块
+      g.fillStyle = '#7d7566';
+      g.beginPath();
+      g.ellipse(0, 5, 9.5, 4.5, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#221a0e';
+      g.beginPath();
+      g.ellipse(0, 3.5, 4, 2.6, 0, 0, Math.PI * 2);
+      g.fill();
       g.strokeStyle = '#6b4a2a';
-      g.lineWidth = 2.6;
+      g.lineWidth = 2.2;
       g.lineCap = 'round';
       g.beginPath();
-      g.moveTo(-8, -8);
-      g.lineTo(8, 8);
-      g.moveTo(8, -8);
-      g.lineTo(-8, 8);
+      g.moveTo(-6.5, 8);
+      g.lineTo(-2.5, -5);
+      g.moveTo(6.5, 8);
+      g.lineTo(2.5, -5);
       g.stroke();
       g.lineCap = 'butt';
       g.fillStyle = '#f0c24e';
-      for (const [cx, cy, r] of [[-3, 6, 3], [3.5, 5.5, 2.6], [0, 2.5, 2.6]] as const) {
+      for (const [cx, cy, r] of [[-3, 8, 2.6], [3.5, 7.5, 2.2], [0, 4.5, 2.2]] as const) {
         g.beginPath();
         g.arc(cx, cy, r, 0, Math.PI * 2);
         g.fill();
       }
       g.fillStyle = '#ffe9a8';
       g.beginPath();
-      g.arc(-4, 5, 1, 0, Math.PI * 2);
+      g.arc(-3.6, 7.2, 0.8, 0, Math.PI * 2);
       g.fill();
       break;
     }
     case 'barracks': {
-      // 军营：三角帐篷 + 中柱
+      // 军营：三角帐篷 + 中柱 + 门帘
       g.fillStyle = SIDE_FILL[side];
       g.beginPath();
       g.moveTo(-11, 9);
@@ -254,8 +350,22 @@ export function drawBuildingIcon(
       g.lineTo(11, 9);
       g.closePath();
       g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.22)';
+      g.beginPath();
+      g.moveTo(0, -11);
+      g.lineTo(11, 9);
+      g.lineTo(2.5, 9);
+      g.closePath();
+      g.fill();
+      g.fillStyle = 'rgba(20,14,8,0.6)';
+      g.beginPath();
+      g.moveTo(0, -2);
+      g.lineTo(-3, 9);
+      g.lineTo(3, 9);
+      g.closePath();
+      g.fill();
       g.strokeStyle = 'rgba(245,236,210,0.55)';
-      g.lineWidth = 1.8;
+      g.lineWidth = 1.6;
       g.beginPath();
       g.moveTo(-8.5, 5);
       g.lineTo(-1.2, -7.6);
@@ -269,7 +379,7 @@ export function drawBuildingIcon(
       break;
     }
     case 'tower': {
-      // 箭塔：梯形塔身 + 雉堞
+      // 箭塔：梯形塔身 + 雉堞 + 箭窗
       g.fillStyle = SIDE_FILL[side];
       g.beginPath();
       g.moveTo(-6, 11);
@@ -281,11 +391,11 @@ export function drawBuildingIcon(
       g.fillRect(-5.5, -7, 3, 4);
       g.fillRect(-1.5, -7, 3, 4);
       g.fillRect(2.5, -7, 3, 4);
-      g.strokeStyle = SIDE_DARK[side];
+      g.strokeStyle = 'rgba(20,14,8,0.5)';
       g.lineWidth = 1.4;
       g.beginPath();
-      g.moveTo(-4.6, 4);
-      g.lineTo(4.6, 4);
+      g.moveTo(0, 0);
+      g.lineTo(0, 4);
       g.stroke();
       break;
     }

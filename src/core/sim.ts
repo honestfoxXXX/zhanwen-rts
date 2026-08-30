@@ -23,7 +23,10 @@ export function isUnit(e: Unit | Building): e is Unit {
 }
 
 export function entRadius(e: Unit | Building): number {
-  return isUnit(e) ? UNIT_DEFS[e.type].radius : e.half * 0.9;
+  // 建筑受击半径略大于 2×2 阻挡占格的外接半径（40）：近战单位的寻路可达位
+  // 在占格外一圈格心（距中心 ~60px），射程 12 必须配上 ≥42 的受击半径才够得着，
+  // 否则会贴着城堡边缘转圈打不着。视觉 half 只影响碰撞与绘制，不影响这里。
+  return isUnit(e) ? UNIT_DEFS[e.type].radius : Math.max(e.half * 0.9, TILE * 1.15);
 }
 
 /**

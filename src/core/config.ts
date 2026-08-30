@@ -23,10 +23,10 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
-  hq: { name: '城堡', cost: 0, hp: 2800, buildTime: 0, half: 40, income: 4, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
-  mine: { name: '金矿', cost: 100, hp: 320, buildTime: 5, half: 40, income: 4, weapon: null },
-  barracks: { name: '军营', cost: 150, hp: 650, buildTime: 8, half: 40, income: 0, weapon: null },
-  tower: { name: '箭塔', cost: 120, hp: 520, buildTime: 6, half: 40, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
+  hq: { name: '城堡', cost: 0, hp: 2800, buildTime: 0, half: 30, income: 4, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
+  mine: { name: '金矿', cost: 100, hp: 320, buildTime: 5, half: 30, income: 4, weapon: null },
+  barracks: { name: '军营', cost: 150, hp: 650, buildTime: 8, half: 30, income: 0, weapon: null },
+  tower: { name: '箭塔', cost: 120, hp: 520, buildTime: 6, half: 30, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
 };
 
 /** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
@@ -203,8 +203,8 @@ export const DIFFICULTY: Record<Difficulty, {
   weights: Record<UnitType, number>;
   think: number;
 }> = {
-  // 数值经 scripts/balance.ts 无头跑批校准。节奏目标：1v1 普通 ~5.5-6 分钟、
-  // 3 人混战 ~9 分钟（扩张 → 中期拉锯 → 攻城），胜率梯度 简单 ~100%/50% / 普通 ~88%/50% / 困难 ~38%。
+  // 数值经 scripts/balance.ts 无头跑批校准。节奏：1v1 普通 ~4.5 分钟、
+  // 3 人混战 ~8.5 分钟（扩张 → 中期拉锯 → 攻城），胜率梯度 简单 ~100%/63% / 普通 ~75%/25% / 困难 ~25%/25%。
   // 注意：建造区以中线 y=960 对称切分，AI 的整体数值要比「前压不对称」时期更高才能维持同等难度。
   easy: {
     label: '简单', incomeMult: 0.75, maxMines: 4, maxBarracks: 1, maxTowers: 1,
