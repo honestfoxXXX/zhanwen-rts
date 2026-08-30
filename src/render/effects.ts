@@ -10,7 +10,10 @@ interface Fx {
   vx: number; vy: number;
 }
 
-const SIDE_COLORS = ['#22d3ee', '#fb7185'];
+import type { Side } from '../core/types';
+import { SIDE_FILL } from './shapes';
+
+const SIDE_COLORS = SIDE_FILL;
 
 export class Effects {
   private list: Fx[] = [];
@@ -26,7 +29,7 @@ export class Effects {
     this.add({ kind, x, y, dur, r: opts.r ?? 10, color: opts.color ?? '#ffffff', big: opts.big ?? false, vx: 0, vy: 0 });
   }
 
-  dieEvent(x: number, y: number, r: number, side: 0 | 1, big = false): void {
+  dieEvent(x: number, y: number, r: number, side: Side, big = false): void {
     this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big, vx: 0, vy: 0 });
     // 四散碎片：体型大的单位碎得更夸张
     for (let i = 0; i < (big ? 7 : 4); i++) {
@@ -53,7 +56,7 @@ export class Effects {
     this.add({ kind: 'mark', x, y, dur: 0.5, r: 10, color: '#34d399', big: false, vx: 0, vy: 0 });
   }
 
-  builtEvent(x: number, y: number, side: 0 | 1): void {
+  builtEvent(x: number, y: number, side: Side): void {
     this.add({ kind: 'built', x, y, dur: 0.5, r: 40, color: SIDE_COLORS[side], big: false, vx: 0, vy: 0 });
   }
 

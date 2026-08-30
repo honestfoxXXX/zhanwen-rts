@@ -1,15 +1,14 @@
 import {
-  BUILDING_DEFS, COLS, HQ_POS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
+  BUILDING_DEFS, COLS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
 import type { MapDef } from '../core/config';
 import type { Building, Unit, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
-import { drawUnitBody } from './shapes';
+import { drawUnitBody, SIDE_DARK, SIDE_DIM, SIDE_FILL } from './shapes';
 
-const SIDE = ['#22d3ee', '#fb7185'];
-const SIDE_DIM = ['rgba(34,211,238,0.14)', 'rgba(251,113,133,0.14)'];
-const SIDE_DARK = ['#155e75', '#9f1239'];
+// 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
+const SIDE = SIDE_FILL;
 const C = {
   groundA: '#0c1728',
   groundB: '#0e1a2e',
@@ -128,17 +127,20 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
 
-  // ---- 基地平台（HQ 底座）----
-  for (const [i, p] of HQ_POS.entries()) {
-    g.strokeStyle = i === 0 ? 'rgba(34,211,238,0.28)' : 'rgba(251,113,133,0.28)';
+  // ---- 基地平台（HQ 底座），按地图出生点绘制 ----
+  for (const [i, sp] of map.spawns.entries()) {
+    const p = sp.pos;
+    g.strokeStyle = SIDE_FILL[i];
+    g.globalAlpha = 0.28;
     g.lineWidth = 1.5;
     roundRect(g, p.x - 56, p.y - 56, 112, 112, 14);
     g.stroke();
     g.setLineDash([4, 5]);
-    g.strokeStyle = i === 0 ? 'rgba(34,211,238,0.14)' : 'rgba(251,113,133,0.14)';
+    g.globalAlpha = 0.14;
     roundRect(g, p.x - 48, p.y - 48, 96, 96, 12);
     g.stroke();
     g.setLineDash([]);
+    g.globalAlpha = 1;
   }
   return c;
 }

@@ -29,22 +29,67 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   tower: { name: '箭塔', cost: 120, hp: 340, buildTime: 6, half: 40, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
 };
 
+/** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
+export interface SpawnDef {
+  pos: Vec;
+  build: { x0: number; x1: number; y0: number; y1: number };
+}
+
 export interface MapDef {
   id: string;
   name: string;
   /** 一句话说明这张图的战术侧重，开局提示会给玩家看 */
   brief: string;
+  /** 参战方数，由出生点数量决定 */
+  players: number;
   /** 岩石障碍（tile 坐标） */
   rocks: [number, number][];
-  /** 水晶矿点（世界坐标）。必须关于 (360,960) 中心对称，否则一边天然占优 */
+  /** 水晶矿点（世界坐标）。布局必须满足对应人数下的对称性约束 */
   nodes: Vec[];
+  spawns: SpawnDef[];
 }
+
+/**
+ * 双方：上下对峙，可建造区以中线 y=960 为界。
+ * 边界值对齐"建筑占 cy-1..cy 两行"的占位规则，双方刚好各自贴住中线。
+ */
+const SPAWNS_2P: SpawnDef[] = [
+  { pos: { x: 360, y: 1640 }, build: { x0: 1, x1: 16, y0: 25, y1: 46 } },
+  { pos: { x: 360, y: 280 }, build: { x0: 1, x1: 16, y0: 1, y1: 23 } },
+];
+
+/**
+ * 三方：玩家独占下半场，两个 AI 分列左上 / 右上。
+ * 竖屏 9:16 放不下三个等距基地，所以采用"左右镜像"的对称方式 ——
+ * 地图关于 x=360 镜像对称，保证两个 AI 完全等价；玩家位置不同是本模式的设定，
+ * 由"两个 AI 会先互相消耗"来平衡。
+ */
+const SPAWNS_3P: SpawnDef[] = [
+  { pos: { x: 360, y: 1640 }, build: { x0: 1, x1: 16, y0: 25, y1: 46 } },
+  { pos: { x: 160, y: 300 }, build: { x0: 1, x1: 8, y0: 1, y1: 23 } },
+  { pos: { x: 560, y: 300 }, build: { x0: 9, x1: 16, y0: 1, y1: 23 } },
+];
+
+/** 三方图共用的矿点：关于 x=360 左右镜像，两个 AI 完全等价 */
+const NODES_3P: Vec[] = [
+  { x: 120, y: 1560 }, { x: 600, y: 1560 }, { x: 360, y: 1400 },  // 玩家半场
+  { x: 80, y: 600 }, { x: 640, y: 600 },                            // 两翼后方
+  { x: 280, y: 560 }, { x: 440, y: 560 },                           // 两翼内侧
+  { x: 200, y: 960 }, { x: 520, y: 960 },                           // 中路争夺
+  { x: 360, y: 1120 }, { x: 360, y: 760 },                          // 中轴
+  { x: 120, y: 1240 }, { x: 600, y: 1240 },                         // 玩家前哨
+];
+
+/** 支持的参战人数 */
+export const PLAYER_COUNTS = [2, 3];
 
 export const MAPS: MapDef[] = [
   {
     id: 'gate',
     name: '中央关口',
     brief: '中路一道关口，两侧可绕行 —— 控制关口就控制节奏',
+    players: 2,
+    spawns: SPAWNS_2P,
     rocks: [
       [8, 23], [9, 23], [8, 24], [9, 24],       // 中央关口
       [5, 22], [5, 23], [5, 24],                 // 左墙
@@ -62,6 +107,8 @@ export const MAPS: MapDef[] = [
     id: 'lanes',
     name: '双通道',
     brief: '中央被彻底封死，只能左右分兵 —— 别把部队全压在一边',
+    players: 2,
+    spawns: SPAWNS_2P,
     rocks: [
       [8, 20], [9, 20], [8, 21], [9, 21], [8, 22], [9, 22],
       [8, 23], [9, 23], [8, 24], [9, 24], [8, 25], [9, 25],
@@ -79,6 +126,8 @@ export const MAPS: MapDef[] = [
     id: 'open',
     name: '开阔地',
     brief: '几乎没有掩体，机动与包抄决定胜负 —— 小心被绕后',
+    players: 2,
+    spawns: SPAWNS_2P,
     rocks: [
       [6, 23], [11, 25], [3, 24], [14, 22],   // 零散掩体，不构成封锁
     ],
@@ -91,17 +140,44 @@ export const MAPS: MapDef[] = [
       { x: 240, y: 820 }, { x: 480, y: 1100 },
     ],
   },
+  {
+    id: 'tri',
+    name: '三足鼎立',
+    brief: '三方混战：你在南方，两个 AI 分列左右上角 —— 让他们先互相消耗',
+    players: 3,
+    spawns: SPAWNS_3P,
+    rocks: [
+      [8, 20], [9, 20], [8, 21], [9, 21],       // 中央核心，逼迫绕行
+      [4, 17], [13, 17], [4, 26], [13, 26],     // 两翼挡墙
+      [2, 22], [15, 22],                        // 边路碎石
+    ],
+    nodes: NODES_3P,
+  },
+  {
+    id: 'tribrawl',
+    name: '中原逐鹿',
+    brief: '中央开阔、两翼逼仄 —— 谁控住中轴谁就能左右战局',
+    players: 3,
+    spawns: SPAWNS_3P,
+    rocks: [
+      [8, 20], [9, 20], [8, 21], [9, 21],       // 中央小块
+      [2, 16], [15, 16], [2, 28], [15, 28],     // 角落碎石，不构成封锁
+    ],
+    nodes: [
+      { x: 120, y: 1560 }, { x: 600, y: 1560 }, { x: 360, y: 1400 },
+      { x: 80, y: 600 }, { x: 640, y: 600 },
+      { x: 280, y: 560 }, { x: 440, y: 560 },
+      // 争夺点更贴近中轴，鼓励三方在中路撞车
+      { x: 240, y: 1000 }, { x: 480, y: 1000 },
+      { x: 360, y: 1100 }, { x: 360, y: 760 },
+      { x: 120, y: 1220 }, { x: 600, y: 1220 },
+    ],
+  },
 ];
 
 /** 默认地图（兼容既有引用）：中央关口 */
 export const NODES: Vec[] = MAPS[0].nodes;
 export const ROCK_TILES: [number, number][] = MAPS[0].rocks;
-
-/** 双方主基地位置（避开底部/顶部 HUD 遮挡区） */
-export const HQ_POS: Vec[] = [
-  { x: 360, y: 1640 }, // 玩家
-  { x: 360, y: 280 },  // 敌方
-];
 
 export const DIFFICULTY: Record<Difficulty, {
   label: string;
@@ -116,23 +192,25 @@ export const DIFFICULTY: Record<Difficulty, {
   weights: Record<UnitType, number>;
   think: number;
 }> = {
-  // 数值经 scripts/balance.ts 无头跑批校准，目标胜率：简单 ~90% / 普通 ~50% / 困难 ~20%
+  // 数值经 scripts/balance.ts 无头跑批校准，目标胜率：简单 ~100% / 普通 ~75% / 困难 ~45%
+  // 注意：建造区改为以中线 y=960 对称切分后，玩家可用纵深变大、AI 被推远，
+  // 因此 AI 的整体数值要比「前压不对称」时期更高才能维持同等难度。
   easy: {
-    label: '简单', incomeMult: 0.6, maxMines: 3, maxBarracks: 1, maxTowers: 0,
-    wavePop: 16, waveCd: 55, waveMax: 22, retreat: false,
+    label: '简单', incomeMult: 0.7, maxMines: 3, maxBarracks: 1, maxTowers: 0,
+    wavePop: 16, waveCd: 50, waveMax: 22, retreat: false,
     weights: { infantry: 0.7, archer: 0.3, heavy: 0 }, think: 0.6,
   },
   // 三档必须是"单调更强"：收入更高、矿更多、兵营更多、出击更频繁。
   // 曾经把困难的 waveCd 调得比普通还长，结果两档挤在一起、难度选择失去意义。
   normal: {
-    label: '普通', incomeMult: 0.9, maxMines: 5, maxBarracks: 2, maxTowers: 1,
-    wavePop: 22, waveCd: 39, waveMax: 30, retreat: true,
+    label: '普通', incomeMult: 0.99, maxMines: 5, maxBarracks: 2, maxTowers: 1,
+    wavePop: 23, waveCd: 35, waveMax: 33, retreat: true,
     weights: { infantry: 0.55, archer: 0.3, heavy: 0.15 }, think: 0.55,
   },
   hard: {
     // 困难档对参数极度敏感：incomeMult 每加 0.05、waveCd 每减 4 都要重新跑批
-    label: '困难', incomeMult: 0.97, maxMines: 6, maxBarracks: 3, maxTowers: 2,
-    wavePop: 24, waveCd: 36, waveMax: 42, retreat: true,
+    label: '困难', incomeMult: 1.0, maxMines: 6, maxBarracks: 3, maxTowers: 2,
+    wavePop: 25, waveCd: 34, waveMax: 40, retreat: true,
     weights: { infantry: 0.45, archer: 0.3, heavy: 0.25 }, think: 0.5,
   },
 };

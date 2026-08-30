@@ -1,8 +1,9 @@
 import { MAP_H, MAP_W } from '../core/config';
 import type { World } from '../core/types';
 import type { Camera } from './camera';
+import { SIDE_FILL } from './shapes';
 
-const SIDE = ['#22d3ee', '#fb7185'];
+const SIDE = SIDE_FILL;
 
 export interface MiniRect { x: number; y: number; w: number; h: number }
 

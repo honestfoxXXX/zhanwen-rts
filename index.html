@@ -23,7 +23,7 @@
           <div class="clock" id="resTime">0:00</div>
           <button id="btnPause" class="icon" aria-label="暂停">‖</button>
         </div>
-        <div id="armyBar" title="双方军力对比"><i id="armyMine"></i><i id="armyFoe"></i></div>
+        <div id="armyBar" title="各方军力对比"></div>
         <div id="goal"></div>
         <div id="alertBanner" class="hidden"></div>
         <div id="selchip" class="hidden"><span id="selCount">已选 0</span><button id="btnDesel" aria-label="取消选择">✕</button></div>
@@ -56,11 +56,15 @@
       <!-- 主菜单 -->
       <div id="menu" class="screen">
         <h1>战 纹</h1>
-        <p class="sub">竖屏即时战略 · 挥师北上，推平敌方主基地</p>
+        <p class="sub">竖屏即时战略 · 称霸战场，扫平所有敌方主基地</p>
         <div class="seg" id="diffSeg">
           <button data-d="easy">简单</button>
           <button data-d="normal" class="on">普通</button>
           <button data-d="hard">困难</button>
+        </div>
+        <div class="seg" id="modeSeg">
+          <button data-p="2" class="on">1v1 对战</button>
+          <button data-p="3">3 人混战</button>
         </div>
         <button id="btnStart" class="primary">开 战</button>
         <ul class="hint">

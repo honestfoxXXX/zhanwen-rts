@@ -16,6 +16,12 @@ import type { Difficulty, UnitType, World } from '../src/core/types';
 const STEP = 1 / 60;
 
 const forcedMap = process.env.ZW_MAP !== undefined ? Number(process.env.ZW_MAP) : null;
+// 跑批默认按 2 人图校准；ZW_PLAYERS=3 时才在三方图里测，避免把 1v2 和 1v1 混在一起统计
+const forcedPlayers = process.env.ZW_PLAYERS !== undefined ? Number(process.env.ZW_PLAYERS) : 2;
+const mapPool = MAPS
+  .map((m, i) => [m, i] as const)
+  .filter(([m]) => m.players === forcedPlayers)
+  .map(([, i]) => i);
 
 // A/B 对照：关掉克制关系跑一遍基线
 if (process.env.ZW_NO_COUNTER === '1') {
@@ -68,12 +74,20 @@ function playerThink(w: World): void {
     if (w.crystals[side] >= UNIT_DEFS[t].cost) issueCommand(w, { type: 'train', side, unit: t });
   }
 
-  // 出兵：攒够一波就平推
+  // 出兵：攒够一波就平推离自己最近的敌方主基地（混战模式下有多个）
   const army = w.units.filter(u => u.side === side && !u.dead);
   const pop = army.reduce((n, u) => n + UNIT_DEFS[u.type].pop, 0);
   const idle = army.filter(u => u.order.kind === 'idle');
   if (pop >= P_WAVE_POP && idle.length >= 4) {
-    issueCommand(w, { type: 'move', side, ids: idle.map(u => u.id), x: 360, y: 280 });
+    const foes = w.buildings.filter(b => b.side !== side && b.type === 'hq' && !b.dead);
+    if (foes.length) {
+      let best = foes[0], bd = Infinity;
+      for (const h of foes) {
+        const d = (h.x - hq.x) ** 2 + (h.y - hq.y) ** 2;
+        if (d < bd) { bd = d; best = h; }
+      }
+      issueCommand(w, { type: 'move', side, ids: idle.map(u => u.id), x: best.x, y: best.y });
+    }
   }
 }
 
@@ -81,9 +95,10 @@ interface Result {
   win: number; games: number; time: number; kills: number; pop: number;
 }
 
-function runGame(diff: Difficulty, seed: number, maxSec: number, scripted: boolean): { winner: 0 | 1 | null; time: number; kills: number } {
-  // ZW_MAP 指定时固定跑该图，否则按种子轮换（与 main.ts 的开局逻辑一致）
-  const w = createWorld(diff, seed, forcedMap ?? seed % MAPS.length);
+function runGame(diff: Difficulty, seed: number, maxSec: number, scripted: boolean): { winner: Side | null; time: number; kills: number } {
+  // ZW_MAP 指定时固定跑该图，否则在对应人数的地图池里按种子轮换（与 main.ts 开局逻辑一致）
+  const mapIndex = forcedMap ?? mapPool[seed % mapPool.length];
+  const w = createWorld(diff, seed, mapIndex);
   let acc = 0;
   const steps = Math.round(maxSec / STEP);
   for (let i = 0; i < steps && !w.gameOver; i++) {
@@ -129,6 +144,6 @@ function run(label: string, scripted: boolean, games: number, maxSec: number): v
 const games = Number(process.argv[2] ?? 12);
 const maxSec = Number(process.argv[3] ?? 600);
 console.log(`兵种克制：${process.env.ZW_NO_COUNTER === '1' ? '关闭（对照基线）' : '开启'}`);
-console.log(`地形：${forcedMap !== null ? MAPS[forcedMap].name : `${MAPS.length} 张轮换`}`);
+console.log(`地形：${forcedMap !== null ? MAPS[forcedMap].name : `${mapPool.length} 张 ${forcedPlayers} 人图轮换`}`);
 run('脚本玩家 vs AI', true, games, maxSec);
 run('玩家完全不操作（摆烂基线）', false, Math.max(3, Math.round(games / 3)), maxSec);

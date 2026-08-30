@@ -60,8 +60,8 @@ describe('AI', () => {
     const steps = 10 * 60;
     for (let i = 0; i < steps; i++) {
       stepWorld(w, 1 / 60);
-      if (w.ai.defending) break;
+      if (w.ai[1].defending) break;
     }
-    expect(w.ai.defending).toBe(true);
+    expect(w.ai[1].defending).toBe(true);
   });
 });

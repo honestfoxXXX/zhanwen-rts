@@ -65,7 +65,7 @@ describe('确定性', () => {
     const b = deserializeWorld(serializeWorld(a));
     expect(b.buildings.filter(v => v.side === 0 && v.type === 'barracks').length).toBe(1);
     expect(b.queue[0]).toEqual(['heavy']);
-    expect(b.ai.waves).toBe(a.ai.waves);
+    expect(b.ai[1].waves).toBe(a.ai[1].waves);
     expect(b.blocked).toBeInstanceOf(Uint8Array);
     expect(b.blocked.length).toBe(a.blocked.length);
   });

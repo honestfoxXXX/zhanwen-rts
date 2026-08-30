@@ -1,5 +1,5 @@
 import {
-  BUILDING_DEFS, COLS, DIFFICULTY, HQ_POS, MAP_H, MAPS, MAP_W, POP_CAP,
+  BUILDING_DEFS, COLS, DIFFICULTY, MAP_H, MAPS, MAP_W, POP_CAP,
   ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
 } from './config';
 import { findPath, isBlockedTile, lineClear, nearestFreeTile } from './pathfinding';
@@ -75,11 +75,14 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
 
 /* ---------------- 世界创建 ---------------- */
 
-/** mapIndex 省略时用默认地图（中央关口），既有测试因此不受影响 */
+/** mapIndex 省略时用默认地图（中央关口），既有测试因此不受影响。参战方数由地图决定 */
 export function createWorld(difficulty: World['difficulty'], seed: number, mapIndex = 0): World {
   const map = MAPS[mapIndex % MAPS.length];
+  const players = map.spawns.length;
   const blocked = new Uint8Array(COLS * ROWS);
   for (const [cx, cy] of map.rocks) blocked[cy * COLS + cx] = 1;
+
+  const midX = MAP_W / 2, midY = MAP_H / 2;
 
   const w: World = {
     tick: 0,
@@ -88,34 +91,47 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     rngState: seed | 0,
     difficulty,
     map: mapIndex % MAPS.length,
+    players,
+    spawns: map.spawns.map(s => ({ x: s.pos.x, y: s.pos.y })),
+    alive: new Array(players).fill(true),
     units: [],
     buildings: [],
     nodes: map.nodes.map((n, i) => ({ id: i + 1, x: n.x, y: n.y, mineId: null })),
     projectiles: [],
-    crystals: [START_CRYSTAL, START_CRYSTAL],
-    popUsed: [0, 0],
-    income: [0, 0],
-    queue: [[], []],
-    rally: [
-      { x: 320, y: 960 },
-      { x: 320, y: 480 },
-    ],
+    crystals: new Array(players).fill(START_CRYSTAL),
+    popUsed: new Array(players).fill(0),
+    income: new Array(players).fill(0),
+    queue: Array.from({ length: players }, () => [] as UnitType[]),
+    // 默认集结点：玩家（side 0）大踏步前压，AI 贴着自己基地集结。
+    // 这种不对称是 1vN 平衡的关键 —— 让双方主力在我方半场碰撞，AI 才打不进家。
+    // 若改成对称集结点，碰撞线会整体向玩家推移，普通档胜率会从 ~80% 塌到 0。
+    rally: map.spawns.map((s, i) => {
+      const dx = midX - s.pos.x, dy = midY - s.pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const off = i === 0 ? 560 : 180;
+      return { x: s.pos.x + (dx / len) * off, y: s.pos.y + (dy / len) * off };
+    }),
     blocked,
     index: new Map(),
     nextId: 1,
     events: [],
     gameOver: null,
-    stats: { kills: [0, 0], trained: [0, 0], peakPop: [0, 0], earned: [0, 0] },
-    ai: {
+    stats: {
+      kills: new Array(players).fill(0),
+      trained: new Array(players).fill(0),
+      peakPop: new Array(players).fill(0),
+      earned: new Array(players).fill(0),
+    },
+    // 每个阵营一份 AI 状态（0 号位玩家不用，仅占位保持下标对齐）
+    ai: Array.from({ length: players }, () => ({
       thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0, waveAt: 0,
       scout: { infantry: 0, archer: 0, heavy: 0 },
       goal: null,
       waves: 0,
-    },
+    })),
   };
 
-  mkBuilding(w, 0, 'hq', HQ_POS[0].x, HQ_POS[0].y, true);
-  mkBuilding(w, 1, 'hq', HQ_POS[1].x, HQ_POS[1].y, true);
+  for (let s = 0; s < players; s++) mkBuilding(w, s as Side, 'hq', w.spawns[s].x, w.spawns[s].y, true);
   return w;
 }
 
@@ -177,15 +193,14 @@ function placeAt(w: World, side: Side, x: number, y: number, isMine: boolean): P
   for (const [dx, dy] of [[-1, 0], [0, 0], [-1, -1], [0, -1]] as const) {
     if (isBlockedTile(w.blocked, cx + dx, cy + dy)) return { ok: false, x, y, reason: 'place' };
   }
-  // 半场限制（矿场除外，可争夺中路矿点）。
-  // 建筑占位是 (cy-1 .. cy) 两行，所以对称边界要让双方刚好各自贴住中线：
-  //   玩家（下半场）最小行 25 → 顶边 (25-1)*40 = 960
-  //   敌方（上半场）最大行 23 → 底边 (23+1)*40 = 960
-  // 旧代码用的是 19 / 17，导致双方边界都落在 y=720：玩家能越线 240 建造，
-  // 且可建纵深比敌方多 440，是完全不对称的。
+  // 建造区域由出生点定义（矿场除外，可争夺公共矿点）。
+  // 双方图按中线切分；三方图再把上半场按列切成左右两块，分给两个 AI。
+  // 边界对齐"建筑占 cy-1..cy 两行"的占位规则，各方刚好贴着自己的边界。
   if (!isMine) {
-    if (side === 0 && cy < 25) return { ok: false, x, y, reason: 'place' };
-    if (side === 1 && cy > 23) return { ok: false, x, y, reason: 'place' };
+    const reg = MAPS[w.map].spawns[side].build;
+    if (cx < reg.x0 || cx > reg.x1 || cy < reg.y0 || cy > reg.y1) {
+      return { ok: false, x, y, reason: 'place' };
+    }
     // 不能压住矿点
     for (const n of w.nodes) {
       if (Math.abs(n.x - cx * TILE) < 66 && Math.abs(n.y - cy * TILE) < 66) {
@@ -253,7 +268,7 @@ export function issueCommand(w: World, c: Command): boolean {
       return any;
     }
     case 'retreat': {
-      const hq = HQ_POS[c.side];
+      const hq = w.spawns[c.side];
       let any = false;
       for (const id of c.ids) {
         const u = unitOf(w, id, c.side);
@@ -348,6 +363,8 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
   ev(w, {
     type: 'shot', x: u.x, y: u.y, tx: t.x, ty: t.y,
     side: u.side, big: u.type === 'heavy',
+    // 混战下不能靠"攻击方不是我"推断挨打的是谁，必须显式记录
+    targetSide: t.side,
     targetBuilding: !isUnit(t), melee: def.projectileSpeed === 0,
   });
   if (def.projectileSpeed > 0) {
@@ -450,8 +467,9 @@ function updateUnit(w: World, u: Unit, dt: number): void {
     u.repathT -= dt;
     if (u.repathT <= 0) {
       const ord = u.order; // 取局部快照，让 TS 能稳定窄化（u.order 在本函数内被改写过）
-      const dx = ord.kind === 'retreat' ? HQ_POS[u.side].x : ord.kind === 'move' ? ord.x : u.x;
-      const dy = ord.kind === 'retreat' ? HQ_POS[u.side].y : ord.kind === 'move' ? ord.y : u.y;
+      const home = w.spawns[u.side];
+      const dx = ord.kind === 'retreat' ? home.x : ord.kind === 'move' ? ord.x : u.x;
+      const dy = ord.kind === 'retreat' ? home.y : ord.kind === 'move' ? ord.y : u.y;
       const p = findPath(w.blocked, u.x, u.y, dx, dy);
       if (p) { u.path = p; u.pathI = 0; }
       else u.order = { kind: 'idle' };
@@ -468,7 +486,7 @@ function updateUnit(w: World, u: Unit, dt: number): void {
         let dest: Vec | null = null;
         if (tgt) dest = { x: tgt.x, y: tgt.y };
         else if (u.order.kind === 'move') dest = { x: u.order.x, y: u.order.y };
-        else if (u.order.kind === 'retreat') dest = { x: HQ_POS[u.side].x, y: HQ_POS[u.side].y };
+        else if (u.order.kind === 'retreat') dest = { x: w.spawns[u.side].x, y: w.spawns[u.side].y };
         if (dest) {
           const p = findPath(w.blocked, u.x, u.y, dest.x, dest.y);
           if (p) { u.path = p; u.pathI = 0; u.repathT = 0.5; }
@@ -530,17 +548,20 @@ function separate(w: World): void {
 /* ---------------- 经济 / 生产 / 建筑 ---------------- */
 
 function updateEconomy(w: World, dt: number): void {
-  const inc = [0, 0];
+  const inc = new Array<number>(w.players).fill(0);
   for (const b of w.buildings) {
     if (b.dead || b.buildT > 0) continue;
     const d = BUILDING_DEFS[b.type];
     if (d.income) inc[b.side] += d.income;
   }
-  inc[1] *= DIFFICULTY[w.difficulty].incomeMult;
+  // 难度倍率只作用于 AI（1 号及之后），玩家恒为 1.0。
+  // 三方混战里两个 AI 会互相消耗、且都不优先打玩家，导致 1v2 反而比 1v1 轻松，
+  // 所以 3 人局给 AI 额外加乘，让"被两方夹击"的压迫感成立。
+  const aiScale = w.players === 3 ? 1.32 : 1;
+  for (let s = 1; s < w.players; s++) inc[s] *= DIFFICULTY[w.difficulty].incomeMult * aiScale;
   w.income = inc;
-  w.crystals[0] += inc[0] * dt;
-  w.crystals[1] += inc[1] * dt;
-  for (const s of [0, 1] as Side[]) {
+  for (let s = 0; s < w.players; s++) {
+    w.crystals[s] += inc[s] * dt;
     w.stats.earned[s] += inc[s] * dt;
     if (w.popUsed[s] > w.stats.peakPop[s]) w.stats.peakPop[s] = w.popUsed[s];
   }
@@ -587,7 +608,7 @@ function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Un
 }
 
 function updateProduction(w: World, dt: number): void {
-  for (const s of [0, 1] as Side[]) {
+  for (let s = 0; s < w.players; s++) {
     if (w.queue[s].length) {
       const free = w.buildings.filter(b => b.side === s && b.type === 'barracks' && !b.dead && b.buildT <= 0 && b.trainType === null);
       for (const b of free) {
@@ -637,7 +658,10 @@ function updateBuildings(w: World, dt: number): void {
       b.cd = wpn.cooldown;
       b.facing = Math.atan2(best.y - b.y, best.x - b.x);
       applyDamage(w, best, wpn.damage, b.side);
-      ev(w, { type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y, side: b.side, big: false });
+      ev(w, {
+        type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y,
+        side: b.side, big: false, targetSide: best.side, melee: false,
+      });
       w.projectiles.push({
         x: b.x, y: b.y, sx: b.x, sy: b.y, tx: best.x, ty: best.y,
         t: 0, dur: Math.max(0.06, bd / wpn.projectileSpeed),
@@ -688,8 +712,16 @@ function cleanup(w: World): void {
       }
     }
     if (b.type === 'hq' && !w.gameOver) {
-      w.gameOver = { winner: (1 - b.side) as Side };
-      ev(w, { type: 'gameOver', winner: w.gameOver.winner });
+      // 混战：主基地被毁即出局，最后存活的一方获胜（同时被灭则为平局）
+      w.alive[b.side] = false;
+      ev(w, { type: 'eliminated', side: b.side });
+      const rest: Side[] = [];
+      for (let s = 0; s < w.players; s++) if (w.alive[s]) rest.push(s as Side);
+      if (rest.length <= 1) {
+        const winner = rest.length === 1 ? rest[0] : null;
+        w.gameOver = { winner };
+        ev(w, { type: 'gameOver', winner });
+      }
     }
   }
   if (deadB.length) w.buildings = w.buildings.filter(b => !b.dead);
@@ -746,7 +778,7 @@ export function hashWorld(w: World): number {
   mix(w.tick);
   mixF(w.time);
   mix(w.rngState);
-  for (const s of [0, 1] as Side[]) { mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]); }
+  for (let s = 0; s < w.players; s++) { mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]); }
   for (const u of w.units) {
     if (u.dead) continue;
     mix(u.id); mix(u.side); mix(u.type.length); mixF(u.x); mixF(u.y); mixF(u.hp);
@@ -756,25 +788,24 @@ export function hashWorld(w: World): number {
     mix(b.id); mix(b.side); mix(b.type.length); mixF(b.hp); mixF(b.buildT);
     if (b.trainType) mix(b.trainType.length);
   }
-  mix(w.queue[0].length);
-  mix(w.queue[1].length);
+  for (let s = 0; s < w.players; s++) mix(w.queue[s].length);
   return h >>> 0;
 }
 
 /** 可 JSON 化的世界快照（blocked 转普通数组，索引与事件不入库） */
 interface WorldSnapshot {
   tick: number; time: number; seed: number; rngState: number; difficulty: World['difficulty'];
-  map: number;
+  map: number; players: number; spawns: Vec[]; alive: boolean[];
   units: Unit[]; buildings: Building[]; nodes: CrystalNode[]; projectiles: Projectile[];
   crystals: number[]; popUsed: number[]; income: number[]; queue: UnitType[][];
   rally: Vec[]; blocked: number[]; nextId: number;
-  gameOver: null | { winner: Side }; stats: World['stats']; ai: AIState;
+  gameOver: World['gameOver']; stats: World['stats']; ai: World['ai'];
 }
 
 export function serializeWorld(w: World): string {
   const s: WorldSnapshot = {
-    tick: w.tick, time: w.time, seed: w.seed, rngState: w.rngState, difficulty: w.difficulty,
-    map: w.map,
+    tick: w.tick, time: w.time, seed: w.seed, rngState: w.rngState,     difficulty: w.difficulty,
+    map: w.map, players: w.players, spawns: w.spawns, alive: w.alive,
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
@@ -787,8 +818,8 @@ export function serializeWorld(w: World): string {
 export function deserializeWorld(json: string): World {
   const s = JSON.parse(json) as WorldSnapshot;
   const w: World = {
-    tick: s.tick, time: s.time, seed: s.seed, rngState: s.rngState, difficulty: s.difficulty,
-    map: s.map,
+    tick: s.tick, time: s.time, seed: s.seed, rngState: s.rngState,     difficulty: s.difficulty,
+    map: s.map, players: s.players, spawns: s.spawns, alive: s.alive,
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),

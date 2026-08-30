@@ -1,4 +1,5 @@
-export type Side = 0 | 1; // 0 玩家（下方），1 敌方（上方）
+/** 阵营。0 恒为玩家，1..2 为 AI；实际参战方数由 World.players 决定 */
+export type Side = 0 | 1 | 2;
 export type UnitType = 'infantry' | 'archer' | 'heavy';
 export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower';
 export type Difficulty = 'easy' | 'normal' | 'hard';
@@ -90,11 +91,14 @@ export interface Projectile {
 export type DenyReason = 'cost' | 'pop' | 'nobarracks' | 'place' | 'nonode' | 'queue';
 
 export interface SimEvent {
-  type: 'shot' | 'die' | 'boom' | 'built' | 'denied' | 'gameOver' | 'moveMark' | 'wave';
+  type: 'shot' | 'die' | 'boom' | 'built' | 'denied' | 'gameOver' | 'moveMark' | 'wave' | 'eliminated';
   x?: number; y?: number; tx?: number; ty?: number;
   side?: Side; big?: boolean; r?: number;
   reason?: DenyReason;
-  winner?: Side;
+  /** null 表示同归于尽（多方同时被灭） */
+  winner?: Side | null;
+  /** shot 事件附带：挨打的是哪一方。混战里不能靠"攻击方不是我"推断 */
+  targetSide?: Side;
   /** shot 事件附带：被打的是建筑(true)还是部队(false)，用于挨打告警分级 */
   targetBuilding?: boolean;
   /** shot 事件附带：近战(true)没有弹道，表现层用挥砍弧线而非枪口闪光 */
@@ -137,8 +141,14 @@ export interface World {
   seed: number;
   rngState: number;
   difficulty: Difficulty;
-  /** 使用的地图索引（指向 config 的 MAPS），决定岩石与矿点布局 */
+  /** 使用的地图索引（指向 config 的 MAPS），决定岩石、矿点与出生点布局 */
   map: number;
+  /** 实际参战方数（2 或 3），由地图的出生点数量决定 */
+  players: number;
+  /** 各方主基地位置（从地图拷贝），撤退令与出生点相关逻辑都读它 */
+  spawns: Vec[];
+  /** 各方是否仍在局中；主基地被毁即出局 */
+  alive: boolean[];
   units: Unit[];
   buildings: Building[];
   nodes: CrystalNode[];
@@ -153,7 +163,8 @@ export interface World {
   index: Map<number, Unit | Building>;
   nextId: number;
   events: SimEvent[];
-  gameOver: null | { winner: Side };
+  /** winner 为 null 表示同归于尽的平局 */
+  gameOver: null | { winner: Side | null };
   /** 战报统计：kills[s] = s 方的击杀数（即对方的阵亡数） */
   stats: {
     kills: number[];
@@ -161,5 +172,6 @@ export interface World {
     peakPop: number[];   // 峰值兵力
     earned: number[];    // 水晶总收入
   };
-  ai: AIState;
+  /** 按阵营索引的 AI 状态；0 号位玩家不用，仅占位以保持下标对齐 */
+  ai: AIState[];
 }

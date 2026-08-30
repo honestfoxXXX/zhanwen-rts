@@ -243,8 +243,8 @@ export class Input {
       return;
     }
 
-    // 点敌方单位 / 建筑 → 集火攻击
-    if (u && u.side === 1 && this.ui.selection.length) {
+    // 点敌方单位 / 建筑 → 集火攻击（任意非我方阵营）
+    if (u && u.side !== 0 && this.ui.selection.length) {
       this.hooks.command({ type: 'attack', side: 0, ids: [...this.ui.selection], targetId: u.id });
       return;
     }
@@ -268,7 +268,7 @@ export class Input {
       this.hooks.toast(`${name} ${Math.max(0, Math.ceil(b.hp))}/${b.maxHp}`);
       return;
     }
-    if (b && b.side === 1 && this.ui.selection.length) {
+    if (b && b.side !== 0 && this.ui.selection.length) {
       this.hooks.command({ type: 'attack', side: 0, ids: [...this.ui.selection], targetId: b.id });
       return;
     }
@@ -279,8 +279,9 @@ export class Input {
 
   private orderAt(world: World, wx: number, wy: number): void {
     if (!this.ui.selection.length) return;
-    const enemy = pickUnitAt(world, wx, wy, 1);
-    if (enemy) {
+    // 优先打点中的敌方单位，否则视为移动令（点中己方单位也算移动）
+    const enemy = pickUnitAt(world, wx, wy, null);
+    if (enemy && enemy.side !== 0) {
       this.hooks.command({ type: 'attack', side: 0, ids: [...this.ui.selection], targetId: enemy.id });
       return;
     }

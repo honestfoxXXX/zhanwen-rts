@@ -15,9 +15,15 @@ import type { BuildingType, Side, UnitType } from '../core/types';
  * 战场渲染与 HUD 卡槽图标共用本文件的函数，避免两套图形各自漂移。
  */
 
-export const SIDE_FILL = ['#22d3ee', '#fb7185'];
-export const SIDE_DARK = ['#155e75', '#9f1239'];
-export const SIDE_RING = ['rgba(34,211,238,0.7)', 'rgba(251,113,133,0.7)'];
+/**
+ * 三方配色：我方青、敌方玫红、第三方橙。
+ * 橙色与"水晶紫 / 前线琥珀 / 选中薄荷绿"都能拉开距离，不会抢语义色。
+ * 全项目只有这一处定义阵营色，其它模块一律从这里引入，避免各处颜色对不上。
+ */
+export const SIDE_FILL = ['#22d3ee', '#fb7185', '#fb923c'];
+export const SIDE_DARK = ['#155e75', '#9f1239', '#9a3412'];
+export const SIDE_RING = ['rgba(34,211,238,0.7)', 'rgba(251,113,133,0.7)', 'rgba(251,146,60,0.7)'];
+export const SIDE_DIM = ['rgba(34,211,238,0.14)', 'rgba(251,113,133,0.14)', 'rgba(251,146,60,0.14)'];
 
 type ShapeKind = 'circle' | 'arrow' | 'hex';
 type EmblemKind = 'dot' | 'ring' | 'plates';

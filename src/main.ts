@@ -59,7 +59,7 @@ cam.clamp();
 /* ---------------- HUD 与输入接线 ---------------- */
 
 const hud = new Hud({
-  start: d => startGame(d),
+  start: (d, p) => startGame(d, p),
   pause: () => { if (state === 'play') { state = 'pause'; hud.showPause(true); } },
   resume: () => { if (state === 'pause') { state = 'play'; acc = 0; hud.showPause(false); } },
   restart: () => { startGame(hud.difficulty); },
@@ -115,11 +115,13 @@ const input = new Input(canvas, cam, () => world, ui, {
 
 hud.setSoundLabel(isMuted() ? '关' : '开');
 
-function startGame(diff: World['difficulty']): void {
+function startGame(diff: World['difficulty'], players = 2): void {
   initAudio();
-  // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建
+  // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建。
+  // 轮换池只取「与所选人数匹配」的图，否则 1v1 和 1v2 会被混在一起统计。
   const seed = (Date.now() & 0x7fffffff) || 12345;
-  const mapIndex = seed % MAPS.length;
+  const pool = MAPS.map((m, i) => [m, i] as const).filter(([m]) => m.players === players).map(([, i]) => i);
+  const mapIndex = pool[seed % pool.length];
   const map = MAPS[mapIndex];
   initRenderer(map);
   world = createWorld(diff, seed, mapIndex);
@@ -200,8 +202,8 @@ function drainEvents(): void {
           else fx.flash(e.x, e.y, e.big ?? false);
         }
         play('shot');
-        // 敌方开火 ⇒ 我方挨打（实体都有阵营且只打对方），发生在屏幕外也必须让玩家知道
-        if (e.side === 1 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
+        // 混战里不能靠"攻击方不是我"判断挨打（AI 互相打也算），必须看事件里记录的挨打方
+        if (e.targetSide === 0 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
           triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);
         }
         break;
@@ -227,6 +229,13 @@ function drainEvents(): void {
         hud.toast('⚠ 敌军大举进攻！');
         play('alarm');
         break;
+      case 'eliminated':
+        // 我方被灭由结算处理；这里只报敌方出局，给玩家"局势推进"的反馈
+        if (e.side !== 0 && world.alive) {
+          const remain = world.alive.filter(Boolean).length;
+          hud.toast(`敌军一部被歼灭，还剩 ${remain} 方`);
+        }
+        break;
       case 'denied':
         hud.toast(DENY_TEXT[e.reason ?? 'place'] ?? '无法执行');
         play('deny');
@@ -240,8 +249,9 @@ function drainEvents(): void {
   if (ended && world.gameOver && state !== 'over') {
     state = 'over';
     input.cancelMode();
-    hud.showResult(world.gameOver.winner, world);
-    play(world.gameOver.winner === 0 ? 'win' : 'lose');
+    const winner = world.gameOver.winner;
+    hud.showResult(winner, world);
+    play(winner === 0 ? 'win' : winner === null ? 'draw' : 'lose');
   }
 }
 

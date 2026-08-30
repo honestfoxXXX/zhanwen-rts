@@ -37,7 +37,7 @@ function beep(f0: number, f1: number, dur: number, type: OscillatorType, vol: nu
   osc.stop(t0 + dur + 0.02);
 }
 
-export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'lose' | 'ui' | 'deny' | 'move' | 'alarm';
+export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'lose' | 'draw' | 'ui' | 'deny' | 'move' | 'alarm';
 
 export function play(name: SoundName): void {
   if (!ac || muted) return;
@@ -60,5 +60,6 @@ export function play(name: SoundName): void {
     case 'ui': beep(600, 800, 0.05, 'sine', 0.06); break;
     case 'win': [523, 659, 784, 1047].forEach((f, i) => beep(f, f, 0.16, 'triangle', 0.1, i * 0.13)); break;
     case 'lose': [392, 330, 262, 196].forEach((f, i) => beep(f, f, 0.2, 'triangle', 0.1, i * 0.16)); break;
+    case 'draw': [440, 392, 440, 392].forEach((f, i) => beep(f, f, 0.18, 'triangle', 0.09, i * 0.15)); break;
   }
 }

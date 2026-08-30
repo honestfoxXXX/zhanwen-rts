@@ -1,7 +1,7 @@
 import { BUILDING_DEFS, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
 import type { BuildingType, Difficulty, Side, UnitType, World } from '../core/types';
 import type { UIState } from '../input/input';
-import { drawIcon } from '../render/shapes';
+import { drawIcon, SIDE_FILL } from '../render/shapes';
 
 const DENY_TEXT: Record<string, string> = {
   cost: '水晶不足',
@@ -12,8 +12,11 @@ const DENY_TEXT: Record<string, string> = {
   queue: '排队已满',
 };
 
+/** 阵营中文名，结算战报用 */
+const SIDE_LABEL = ['我方', '敌方甲', '敌方乙'];
+
 export interface HudHooks {
-  start: (d: Difficulty) => void;
+  start: (d: Difficulty, players: number) => void;
   pause: () => void;
   resume: () => void;
   restart: () => void;
@@ -34,12 +37,13 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 
 export class Hud {
   private diff: Difficulty = 'normal';
+  private players = 2;
+  private armySegs: HTMLElement[] = [];
   private frame = 0;
   private els = {
     hud: $('hud'), menu: $('menu'), pause: $('pauseScr'), result: $('resultScr'), tips: $('tips'),
     crystal: $('resCrystal'), income: $('resIncome'), pop: $('resPop'),
     queue: $('resQueue'), time: $('resTime'),
-    armyMine: $('armyMine'), armyFoe: $('armyFoe'),
     goal: $('goal'), alertBanner: $('alertBanner'),
     selchip: $('selchip'), selCount: $('selCount'),
     rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
@@ -74,11 +78,17 @@ export class Hud {
     this.els.placeNo.addEventListener('click', () => hooks.placeNo());
     $('btnDesel').addEventListener('click', () => hooks.desel());
 
-    $('btnStart').addEventListener('click', () => hooks.start(this.diff));
+    $('btnStart').addEventListener('click', () => hooks.start(this.diff, this.players));
     document.querySelectorAll<HTMLButtonElement>('#diffSeg button').forEach(b => {
       b.addEventListener('click', () => {
         this.diff = b.dataset.d as Difficulty;
         document.querySelectorAll('#diffSeg button').forEach(v => v.classList.toggle('on', v === b));
+      });
+    });
+    document.querySelectorAll<HTMLButtonElement>('#modeSeg button').forEach(b => {
+      b.addEventListener('click', () => {
+        this.players = Number(b.dataset.p);
+        document.querySelectorAll('#modeSeg button').forEach(v => v.classList.toggle('on', v === b));
       });
     });
     $('btnResume').addEventListener('click', () => hooks.resume());
@@ -116,9 +126,10 @@ export class Hud {
     this.els.pause.classList.toggle('hidden', !v);
   }
 
-  showResult(winner: Side, world: World): void {
+  showResult(winner: Side | null, world: World): void {
     const win = winner === 0;
-    this.els.resultTitle.textContent = win ? '胜 利' : '战 败';
+    const draw = winner === null;
+    this.els.resultTitle.textContent = win ? '胜 利' : draw ? '平 局' : '战 败';
     this.els.resultTitle.className = win ? 'win' : 'lose';
     const m = Math.floor(world.time / 60), s = Math.floor(world.time % 60);
     this.els.resultStats.textContent =
@@ -126,14 +137,12 @@ export class Hud {
 
     // 战报：给玩家一个"再来一局"的理由 —— 看得出这局输在哪
     const st = world.stats;
-    const rows: [string, string][] = [
-      ['歼灭敌军', String(st.kills[0])],
-      ['己方阵亡', String(st.kills[1])],
-      ['累计造兵', String(st.trained[0])],
-      ['峰值兵力', `${st.peakPop[0]}/${POP_CAP}`],
-      ['水晶总收入', String(Math.round(st.earned[0]))],
-      ['敌方总收入', String(Math.round(st.earned[1]))],
-    ];
+    const rows: [string, string][] = [['歼灭敌军', String(st.kills[0])]];
+    for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}阵亡`, String(st.kills[s])]);
+    rows.push(['累计造兵', String(st.trained[0])]);
+    rows.push([`峰值兵力`, `${st.peakPop[0]}/${POP_CAP}`]);
+    rows.push(['水晶总收入', String(Math.round(st.earned[0]))]);
+    for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}总收入`, String(Math.round(st.earned[s]))]);
     this.els.resultDetail.textContent = '';
     for (const [k, v] of rows) {
       const li = document.createElement('li');
@@ -141,6 +150,21 @@ export class Hud {
       this.els.resultDetail.appendChild(li);
     }
     this.els.result.classList.remove('hidden');
+  }
+
+  /** 军力条按参战人数动态重建；玩家始终在最左，颜色与战场阵营一致 */
+  private buildArmyBar(players: number): void {
+    const bar = document.getElementById('armyBar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    this.armySegs = [];
+    for (let s = 0; s < players; s++) {
+      const seg = document.createElement('i');
+      seg.style.background = SIDE_FILL[s];
+      if (s === 0) seg.style.borderTopLeftRadius = seg.style.borderBottomLeftRadius = '5px';
+      bar.appendChild(seg);
+      this.armySegs.push(seg);
+    }
   }
 
   showTips(): void {
@@ -202,12 +226,14 @@ export class Hud {
     const qRemain = this.queueRemain(world);
     this.els.queue.textContent = qRemain > 0.05 ? `· 造兵 ${qRemain.toFixed(0)}s` : '';
 
-    // 军力对比：一眼看出现在是优势还是劣势
-    const mine = armyValue(world, 0), foe = armyValue(world, 1);
-    const total = mine + foe;
-    const share = total > 0 ? mine / total : 0.5;
-    this.els.armyMine.style.width = `${(share * 100).toFixed(1)}%`;
-    this.els.armyFoe.style.width = `${((1 - share) * 100).toFixed(1)}%`;
+    // 军力对比：一眼看出现在是优势还是劣势（按参战人数动态分段）
+    if (this.armySegs.length !== world.players) this.buildArmyBar(world.players);
+    const vals: number[] = [];
+    for (let s = 0; s < world.players; s++) vals.push(armyValue(world, s as Side));
+    const total = vals.reduce((a, b) => a + b, 0);
+    for (let s = 0; s < world.players; s++) {
+      this.armySegs[s].style.width = `${total > 0 ? (vals[s] / total * 100) : (100 / world.players)}%`;
+    }
 
     this.els.goal.textContent = this.goalText(world);
 
@@ -268,7 +294,10 @@ export class Hud {
     if (!own.some(b => b.type === 'barracks')) return '目标：先建一座兵营';
     if (own.filter(b => b.type === 'mine').length < 2) return '目标：占水晶矿建矿场 —— 收入就是兵力';
     if (world.popUsed[0] < 12) return `目标：攒兵 ${world.popUsed[0]}/12`;
-    return '目标：进军，摧毁敌方主基地';
+    const foes = world.alive.filter(Boolean).length - 1;
+    return world.players > 2
+      ? `目标：进军，消灭剩余 ${foes} 个敌方主基地`
+      : '目标：进军，摧毁敌方主基地';
   }
 
   /** 造兵队列剩余时长：排队总时长 + 正在训练的兵营里最久的那个 */

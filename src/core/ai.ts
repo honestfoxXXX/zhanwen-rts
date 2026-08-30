@@ -1,15 +1,21 @@
-import { BUILDING_DEFS, DIFFICULTY, HQ_POS, UNIT_DEFS } from './config';
+import { BUILDING_DEFS, DIFFICULTY, MAP_H, UNIT_DEFS } from './config';
 import { canPlace, issueCommand, pushEvent } from './sim';
 import { rngNext } from './rng';
-import type { Building, CrystalNode, Unit, UnitType, Vec, World } from './types';
+import type { Building, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
 
-const BARRACK_SLOTS: [number, number][] = [[200, 280], [520, 280], [200, 400], [520, 400]];
-const TOWER_SLOTS: [number, number][] = [[280, 280], [440, 280], [360, 360]];
+type DifficultyDef = (typeof DIFFICULTY)[World['difficulty']];
+
+/**
+ * 建筑位用相对主基地的偏移表示，而不是写死坐标 ——
+ * 三方混战里两个 AI 的基地分别在左上 / 右上角，写死坐标会直接落到别人的建造区里。
+ */
+const BARRACK_OFFSETS: [number, number][] = [[-80, 40], [80, 40], [-80, -60], [80, -60]];
+const TOWER_OFFSETS: [number, number][] = [[-40, 80], [40, 80], [0, -90]];
 
 const TYPES: UnitType[] = ['infantry', 'archer', 'heavy'];
 
 /**
- * 反制表：玩家主力是 T 时，AI 应多出 COUNTER[T]。
+ * 反制表：对手主力是 T 时，应多出 COUNTER[T]。
  * 对应 config.ts 的克制三角：弓手 › 重装 › 步兵 › 弓手。
  */
 const COUNTER: Record<UnitType, UnitType> = {
@@ -28,12 +34,19 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
   return dx * dx + dy * dy;
 }
 
-function orderArmy(w: World, army: Unit[], x: number, y: number): void {
+function orderArmy(w: World, side: Side, army: Unit[], x: number, y: number): void {
   if (!army.length) return;
-  issueCommand(w, { type: 'move', side: 1, ids: army.map(u => u.id), x, y });
+  issueCommand(w, { type: 'move', side, ids: army.map(u => u.id), x, y });
 }
 
-/** 下一个要占的矿点：有基本盘后优先抢中路（价值最高、双方都能建） */
+/** 撤退集结点：主基地背后（远离地图中心的一侧），别退到敌人那边去 */
+function retreatSpot(w: World, side: Side): Vec {
+  const home = w.spawns[side];
+  const dy = home.y < MAP_H / 2 ? -160 : 160;
+  return { x: home.x, y: Math.max(60, Math.min(MAP_H - 60, home.y + dy)) };
+}
+
+/** 下一个要占的矿点：有基本盘后优先抢中路（价值最高、多方都能建） */
 function nextNode(w: World, hq: Building, mineCount: number): CrystalNode | null {
   const free = w.nodes.filter(n => n.mineId === null);
   if (!free.length) return null;
@@ -50,19 +63,19 @@ function nextNode(w: World, hq: Building, mineCount: number): CrystalNode | null
   return best;
 }
 
-/** 侦查：以指数衰减累计玩家兵种构成，反映"近期阵容"而非历史总和 */
-function updateScout(w: World): void {
+/** 侦查：以指数衰减累计所有敌对单位的兵种构成，反映"近期威胁" */
+function updateScout(w: World, side: Side): void {
   const cnt: Record<UnitType, number> = { infantry: 0, archer: 0, heavy: 0 };
   for (const u of w.units) {
-    if (u.dead || u.side !== 0) continue;
+    if (u.dead || u.side === side) continue;
     cnt[u.type]++;
   }
-  for (const t of TYPES) w.ai.scout[t] = w.ai.scout[t] * 0.9 + cnt[t] * 0.1;
+  for (const t of TYPES) w.ai[side].scout[t] = w.ai[side].scout[t] * 0.9 + cnt[t] * 0.1;
 }
 
-/** 按难度权重抽兵，并对玩家主力做针对性加权 */
-function pickUnit(w: World, weights: Record<UnitType, number>): UnitType {
-  const scout = w.ai.scout;
+/** 按难度权重抽兵，并对当前主要威胁做针对性加权 */
+function pickUnit(w: World, side: Side, weights: Record<UnitType, number>): UnitType {
+  const scout = w.ai[side].scout;
   const wts: Record<UnitType, number> = { ...weights };
   const seen = scout.infantry + scout.archer + scout.heavy;
   if (seen >= 3) {
@@ -80,45 +93,34 @@ function pickUnit(w: World, weights: Record<UnitType, number>): UnitType {
   return 'infantry';
 }
 
-/**
- * 波次目标：奇数波去拔玩家矿场断经济，偶数波直捣主基地。
- * 交替是必须的 —— 若按"兵力不足就打矿场"来判，AI 出击时兵力刚好等于 wavePop，
- * 会永远卡在骚扰矿场、从不推主基地（无头跑批实测玩家胜率 100%）。
- */
-function pickGoal(w: World, hq: Building, waveIndex: number): Vec {
-  const p0 = w.buildings.filter(b => b.side === 0 && !b.dead);
-  if (waveIndex % 2 === 1) {
-    const mines = p0.filter(b => b.type === 'mine');
-    if (mines.length) {
-      let best = mines[0], bd = Infinity;
-      for (const m of mines) {
-        const d = dist2(hq.x, hq.y, m.x, m.y);
-        if (d < bd) { bd = d; best = m; }
-      }
-      return { x: best.x, y: best.y };
-    }
+/** 波次目标：奇数波拔最近的敌方矿场断经济，偶数波推最近的敌方主基地 */
+function pickGoal(w: World, side: Side, hq: Building, waveIndex: number): Vec {
+  const foes = w.buildings.filter(b => b.side !== side && !b.dead);
+  const wantType = waveIndex % 2 === 1 ? 'mine' : 'hq';
+  let pool = foes.filter(b => b.type === wantType);
+  if (!pool.length) pool = foes; // 目标类型打光了就打剩下的
+  if (!pool.length) return { x: hq.x, y: hq.y };
+  let best = pool[0], bd = Infinity;
+  for (const m of pool) {
+    const d = dist2(hq.x, hq.y, m.x, m.y);
+    if (d < bd) { bd = d; best = m; }
   }
-  const hq0 = p0.find(b => b.type === 'hq');
-  return hq0 ? { x: hq0.x, y: hq0.y } : HQ_POS[0];
+  return { x: best.x, y: best.y };
 }
 
-/** AI 主思考（状态机：发展 → 波次进攻 → 回防 → 溃退） */
-export function aiThink(w: World, dt: number): void {
-  const st = w.ai;
-  if (w.gameOver) return;
+/** 单个 AI 阵营的一次思考 */
+function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
+  const st = w.ai[side];
   st.waveCd = Math.max(0, st.waveCd - dt);
   st.thinkT -= dt;
   if (st.thinkT > 0) return;
-
-  const d = DIFFICULTY[w.difficulty];
   st.thinkT = d.think + rngNext(w) * 0.2;
-  const side = 1 as const;
 
   const myB = w.buildings.filter(b => b.side === side && !b.dead);
   const hq = myB.find(b => b.type === 'hq');
   if (!hq) return;
 
-  updateScout(w);
+  updateScout(w, side);
 
   const army = w.units.filter(u => u.side === side && !u.dead);
   const armyPop = army.reduce((n, u) => n + UNIT_DEFS[u.type].pop, 0);
@@ -129,17 +131,28 @@ export function aiThink(w: World, dt: number): void {
   const towers = myB.filter(b => b.type === 'tower');
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
-  // —— 家里受威胁 → 全军回防
-  const threats = w.units.filter(u => u.side === 0 && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 300));
+  // 三方局里两个 AI 互相消耗、都未必优先打玩家，需要更高上限才能形成真正的夹击压力
+  const scale = w.players === 3 ? 1.45 : 1;
+  const maxMines = Math.round(d.maxMines * scale);
+  const maxBarracks = Math.round(d.maxBarracks * scale);
+  const maxTowers = Math.round(d.maxTowers * scale);
+  const wavePop = d.wavePop * scale;
+
+  // —— 家里进了敌人（任意他方）→ 回防
+  const threats = w.units.filter(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 300));
   if (threats.length) {
     st.defending = true;
     // 守家不等于龟缩：来犯之敌明显少于己方兵力时顺势反打，
-    // 否则 AI 会被玩家的持续施压永久锁在 defending 分支里，从不组织进攻。
-    const overmatch = armyPop >= d.wavePop && threats.length <= Math.max(2, army.length >> 2);
-    if (overmatch) orderArmy(w, army, HQ_POS[0].x, HQ_POS[0].y);
-    else orderArmy(w, army, threats[0].x, threats[0].y);
+    // 否则 AI 会被持续施压永久锁在 defending 分支里，从不组织进攻。
+    const overmatch = armyPop >= wavePop && threats.length <= Math.max(2, army.length >> 2);
+    if (overmatch) {
+      const g = pickGoal(w, side, hq, st.waves);
+      orderArmy(w, side, army, g.x, g.y);
+    } else {
+      orderArmy(w, side, army, threats[0].x, threats[0].y);
+    }
   } else if (st.defending) {
-    const still = w.units.some(u => u.side === 0 && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 340));
+    const still = w.units.some(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 340));
     if (!still) {
       st.defending = false;
       st.attacking = false;
@@ -148,44 +161,48 @@ export function aiThink(w: World, dt: number): void {
     }
   }
 
-  // —— 经济：扩张优先于一切（钱够就铺矿，否则 AI 会卡在 2 矿、全程缺钱）
-  if (mines.length < d.maxMines && freeNodes.length && w.crystals[side] >= BUILDING_DEFS.mine.cost) {
+  // —— 经济：扩张优先于一切
+  if (mines.length < maxMines && freeNodes.length && w.crystals[side] >= BUILDING_DEFS.mine.cost) {
     const n = nextNode(w, hq, mines.length);
     if (n) issueCommand(w, { type: 'build', side, building: 'mine', x: n.x, y: n.y });
   }
 
-  // —— 兵营
-  if (barracksAll.length < d.maxBarracks && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && (mines.length >= 2 || w.crystals[side] >= 320)) {
-    const slot = BARRACK_SLOTS.find(s => canPlace(w, side, 'barracks', s[0], s[1]).ok);
+  // —— 兵营（相对主基地取位）
+  if (barracksAll.length < maxBarracks && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && (mines.length >= 2 || w.crystals[side] >= 320)) {
+    const slot = BARRACK_OFFSETS
+      .map(([dx, dy]) => [hq.x + dx, hq.y + dy] as const)
+      .find(s => canPlace(w, side, 'barracks', s[0], s[1]).ok);
     if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot[0], y: slot[1] });
   }
 
   // —— 箭塔
-  if (towers.length < d.maxTowers && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140) {
-    const slot = TOWER_SLOTS.find(s => canPlace(w, side, 'tower', s[0], s[1]).ok);
+  if (towers.length < maxTowers && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140) {
+    const slot = TOWER_OFFSETS
+      .map(([dx, dy]) => [hq.x + dx, hq.y + dy] as const)
+      .find(s => canPlace(w, side, 'tower', s[0], s[1]).ok);
     if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot[0], y: slot[1] });
   }
 
   // —— 造兵（被压着打时排队更深，靠产能而非操作扳回来）
   const maxQueue = st.defending ? 6 : 3;
   if (barracks.length && w.queue[side].length < maxQueue) {
-    const t = pickUnit(w, d.weights);
+    const t = pickUnit(w, side, d.weights);
     const ud = UNIT_DEFS[t];
     // 矿没铺满时给扩张留足预算，避免造兵把经济钱吃光
-    const reserve = freeNodes.length && mines.length < d.maxMines ? BUILDING_DEFS.mine.cost : 0;
+    const reserve = freeNodes.length && mines.length < maxMines ? BUILDING_DEFS.mine.cost : 0;
     if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= 40) {
       issueCommand(w, { type: 'train', side, unit: t });
     }
   }
 
   // —— 波次进攻
-  if (!st.defending && !st.attacking && st.waveCd <= 0 && armyPop >= d.wavePop && army.length >= 4) {
+  if (!st.defending && !st.attacking && st.waveCd <= 0 && armyPop >= wavePop && army.length >= 4) {
     st.attacking = true;
     st.waveStart = armyHp;
     st.waveAt = w.time;
-    st.goal = pickGoal(w, hq, st.waves); // 第 0 波直捣主基地，之后隔波骚扰矿场
+    st.goal = pickGoal(w, side, hq, st.waves); // 第 0 波推主基地，之后隔波骚扰矿场
     st.waves++;
-    orderArmy(w, army, st.goal.x, st.goal.y);
+    orderArmy(w, side, army, st.goal.x, st.goal.y);
     pushEvent(w, { type: 'wave' }); // 敌袭预警
   } else if (st.attacking) {
     const nowHp = army.reduce((n, u) => n + u.hp, 0);
@@ -196,12 +213,25 @@ export function aiThink(w: World, dt: number): void {
       st.attacking = false;
       st.goal = null;
       st.waveCd = d.waveCd;
-      if (d.retreat && armyPop > 0) orderArmy(w, army, HQ_POS[1].x, HQ_POS[1].y + 160);
+      if (d.retreat && armyPop > 0) {
+        const spot = retreatSpot(w, side);
+        orderArmy(w, side, army, spot.x, spot.y);
+      }
     } else {
       // 增援：集结点待命的新兵补入进攻（简单档不增援，保持离散波次节奏）
-      const goal = st.goal ?? pickGoal(w, hq, st.waves);
+      const goal = st.goal ?? pickGoal(w, side, hq, st.waves);
       const idlers = army.filter(u => u.order.kind === 'idle');
-      if (idlers.length >= 3 && w.difficulty !== 'easy') orderArmy(w, idlers, goal.x, goal.y);
+      if (idlers.length >= 3 && w.difficulty !== 'easy') orderArmy(w, side, idlers, goal.x, goal.y);
     }
+  }
+}
+
+/** AI 主思考：逐个 AI 阵营推进（1 号及之后，0 号是玩家） */
+export function aiThink(w: World, dt: number): void {
+  if (w.gameOver) return;
+  const d = DIFFICULTY[w.difficulty];
+  for (let s = 1; s < w.players; s++) {
+    if (!w.alive[s]) continue;
+    aiSide(w, s as Side, d, dt);
   }
 }

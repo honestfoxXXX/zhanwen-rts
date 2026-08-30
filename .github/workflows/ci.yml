@@ -29,5 +29,8 @@ jobs:
         run: npm run build
 
       # 只跑小样本，目的是确保跑批脚本本身不会崩，而不是校验平衡数值
-      - name: 平衡脚本冒烟
+      - name: 平衡脚本冒烟（1v1）
         run: npm run balance -- 2 120
+
+      - name: 平衡脚本冒烟（3 人混战）
+        run: ZW_PLAYERS=3 npm run balance -- 2 120
