@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#070c16" />
+  <meta name="theme-color" content="#141009" />
   <title>战纹 · 竖屏 RTS</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='8' width='16' height='16' rx='3' transform='rotate(45 16 16)' fill='%2322d3ee'/%3E%3C/svg%3E" />
-  <script type="module" crossorigin src="./assets/index-BmDQRvzP.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DZvMcVAj.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='8' width='16' height='16' rx='3' transform='rotate(45 16 16)' fill='%23dfa53b'/%3E%3C/svg%3E" />
+  <script type="module" crossorigin src="./assets/index-ChxS_oDv.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BfiBMXhO.css">
 </head>
 <body>
   <div id="stage">
@@ -19,8 +19,8 @@
       <!-- 游戏内 HUD -->
       <div id="hud" class="hidden">
         <div id="topbar">
-          <div class="res"><span class="gem">◆</span><b id="resCrystal">0</b><span id="resIncome">+0/s</span></div>
-          <div class="pop">兵力 <b id="resPop">0/40</b><span id="resQueue"></span></div>
+          <div class="res"><span class="gem">⚜</span><b id="resCrystal">0</b><span id="resIncome">+0/s</span></div>
+          <div class="pop">兵力 <b id="resPop">0/50</b><span id="resQueue"></span></div>
           <div class="clock" id="resTime">0:00</div>
           <button id="btnPause" class="icon" aria-label="暂停">‖</button>
         </div>
@@ -40,8 +40,8 @@
             <button class="card wide" id="btnRetreat"><span>撤退</span></button>
           </div>
           <div class="row" id="rowBuild">
-            <button class="card" data-build="mine"><i>◆</i><span>矿场</span><em>100</em></button>
-            <button class="card" data-build="barracks"><i>▣</i><span>兵营</span><em>150</em></button>
+            <button class="card" data-build="mine"><i>⚜</i><span>金矿</span><em>100</em></button>
+            <button class="card" data-build="barracks"><i>⛺</i><span>军营</span><em>150</em></button>
             <button class="card" data-build="tower"><i>▲</i><span>箭塔</span><em>120</em></button>
           </div>
           <div class="row" id="rowUnit">
@@ -57,7 +57,7 @@
       <!-- 主菜单 -->
       <div id="menu" class="screen">
         <h1>战 纹</h1>
-        <p class="sub">竖屏即时战略 · 称霸战场，扫平所有敌方主基地</p>
+        <p class="sub">竖屏即时战略 · 架空大陆，扫平所有敌方城堡</p>
         <div class="seg" id="diffSeg">
           <button data-d="easy">简单</button>
           <button data-d="normal" class="on">普通</button>
@@ -69,7 +69,7 @@
         </div>
         <button id="btnStart" class="primary">开 战</button>
         <ul class="hint">
-          <li>◆ 占领水晶矿扩张经济，收入即兵力</li>
+          <li>⚜ 占领金矿扩张经济，黄金即兵力</li>
           <li>⚔ 点选部队 → 点目标，移动即进攻</li>
           <li>📱 手机触屏与电脑鼠标均可游玩</li>
         </ul>
@@ -99,10 +99,10 @@
         <p id="tipsMap" class="sub"></p>
         <ul>
           <li>👆 点选部队后点地图下令；双击部队选中屏幕内全部同类</li>
-          <li>◆ 建矿场占领水晶矿，矿多兵多</li>
+          <li>⚜ 建金矿抢矿脉，矿多兵多</li>
           <li>⚔ 所有移动都是进攻令，部队沿途自动交战</li>
-          <li>🚩「集结」设定新兵集结点；双击兵营可单独给它设集结点</li>
-          <li>🛡 选中部队后可下「固守」（不追击）或「撤退」（撤回主基地）</li>
+          <li>🚩「集结」设定新兵集结点；双击军营可单独给它设集结点</li>
+          <li>🛡 选中部队后可下「固守」（不追击）或「撤退」（撤回城堡）</li>
           <li>⚔ 克制三角：弓手 › 重装 › 步兵 › 弓手</li>
         </ul>
         <button id="btnTipsOk" class="primary">明白了</button>
