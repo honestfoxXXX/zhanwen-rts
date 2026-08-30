@@ -1,0 +1,655 @@
+import {
+  BUILDING_DEFS, COLS, DIFFICULTY, HQ_POS, MAP_H, MAP_W, NODES, POP_CAP,
+  ROCK_TILES, ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
+} from './config';
+import { findPath, isBlockedTile, lineClear, nearestFreeTile } from './pathfinding';
+import { rngNext } from './rng';
+import { aiThink } from './ai';
+import type {
+  Building, BuildingType, Command, DenyReason, Side, SimEvent, Unit, UnitType, Vec, World,
+} from './types';
+
+export const STEP = 1 / 60;
+
+/* ---------------- 基础工具 ---------------- */
+
+export function tileCenter(cx: number, cy: number): Vec {
+  return { x: cx * TILE + TILE / 2, y: cy * TILE + TILE / 2 };
+}
+
+export function isUnit(e: Unit | Building): e is Unit {
+  return (e as Unit).order !== undefined;
+}
+
+export function entRadius(e: Unit | Building): number {
+  return isUnit(e) ? UNIT_DEFS[e.type].radius : e.half * 0.9;
+}
+
+export function entityById(w: World, id: number): Unit | Building | null {
+  for (const u of w.units) if (u.id === id) return u;
+  for (const b of w.buildings) if (b.id === id) return b;
+  return null;
+}
+
+function ev(w: World, e: SimEvent): void {
+  if (w.events.length < 300) w.events.push(e);
+}
+
+/** 供 AI 模块推送事件（如敌袭预警） */
+export function pushEvent(w: World, e: SimEvent): void {
+  ev(w, e);
+}
+
+export function applyDamage(w: World, target: Unit | Building, dmg: number, by: Side): boolean {
+  if (target.dead) return false;
+  target.hp -= dmg;
+  if (target.hp <= 0) {
+    target.dead = true;
+    w.stats.kills[by]++;
+    return true;
+  }
+  return false;
+}
+
+/* ---------------- 世界创建 ---------------- */
+
+export function createWorld(difficulty: World['difficulty'], seed: number): World {
+  const blocked = new Uint8Array(COLS * ROWS);
+  for (const [cx, cy] of ROCK_TILES) blocked[cy * COLS + cx] = 1;
+
+  const w: World = {
+    tick: 0,
+    time: 0,
+    seed,
+    rngState: seed | 0,
+    difficulty,
+    units: [],
+    buildings: [],
+    nodes: NODES.map((n, i) => ({ id: i + 1, x: n.x, y: n.y, mineId: null })),
+    projectiles: [],
+    crystals: [START_CRYSTAL, START_CRYSTAL],
+    popUsed: [0, 0],
+    income: [0, 0],
+    queue: [[], []],
+    rally: [
+      { x: 320, y: 960 },
+      { x: 320, y: 480 },
+    ],
+    blocked,
+    nextId: 1,
+    events: [],
+    gameOver: null,
+    stats: { kills: [0, 0] },
+    ai: { thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0 },
+  };
+
+  mkBuilding(w, 0, 'hq', HQ_POS[0].x, HQ_POS[0].y, true);
+  mkBuilding(w, 1, 'hq', HQ_POS[1].x, HQ_POS[1].y, true);
+  return w;
+}
+
+function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: number, instant = false): Building {
+  const d = BUILDING_DEFS[type];
+  const b: Building = {
+    id: w.nextId++,
+    side, type,
+    x, y, half: d.half,
+    hp: d.hp, maxHp: d.hp,
+    buildT: instant ? 0 : d.buildTime,
+    cd: 0,
+    facing: side === 0 ? -Math.PI / 2 : Math.PI / 2,
+    trainType: null, trainT: 0,
+    dead: false,
+  };
+  w.buildings.push(b);
+  setBuildingTiles(w, b, 1);
+  return b;
+}
+
+function setBuildingTiles(w: World, b: Building, v: number): void {
+  const cx = Math.round(b.x / TILE), cy = Math.round(b.y / TILE);
+  for (const [dx, dy] of [[-1, 0], [0, 0], [-1, -1], [0, -1]] as const) {
+    const tx = cx + dx, ty = cy + dy;
+    if (tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS) w.blocked[ty * COLS + tx] = v;
+  }
+}
+
+/* ---------------- 建造放置 ---------------- */
+
+export interface PlaceResult { ok: boolean; x: number; y: number; reason?: DenyReason }
+
+export function nearestFreeNode(w: World, x: number, y: number, r: number) {
+  let best = null as null | (typeof w.nodes)[0];
+  let bd = Infinity;
+  for (const n of w.nodes) {
+    if (n.mineId !== null) continue;
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d <= r && d < bd) { bd = d; best = n; }
+  }
+  return best;
+}
+
+export function canPlace(w: World, side: Side, type: BuildingType, x: number, y: number): PlaceResult {
+  if (type === 'mine') {
+    const n = nearestFreeNode(w, x, y, 48);
+    if (!n) return { ok: false, x, y, reason: 'nonode' };
+    return placeAt(w, side, n.x, n.y, true);
+  }
+  return placeAt(w, side, x, y, false);
+}
+
+function placeAt(w: World, side: Side, x: number, y: number, isMine: boolean): PlaceResult {
+  const cx = Math.round(x / TILE), cy = Math.round(y / TILE);
+  if (cx < 1 || cy < 1 || cx >= COLS || cy >= ROWS) return { ok: false, x, y, reason: 'place' };
+  for (const [dx, dy] of [[-1, 0], [0, 0], [-1, -1], [0, -1]] as const) {
+    if (isBlockedTile(w.blocked, cx + dx, cy + dy)) return { ok: false, x, y, reason: 'place' };
+  }
+  // 半场限制（矿场除外，可争夺中路矿点）
+  if (!isMine) {
+    if (side === 0 && cy < 19) return { ok: false, x, y, reason: 'place' };
+    if (side === 1 && cy > 17) return { ok: false, x, y, reason: 'place' };
+    // 不能压住矿点
+    for (const n of w.nodes) {
+      if (Math.abs(n.x - cx * TILE) < 66 && Math.abs(n.y - cy * TILE) < 66) {
+        return { ok: false, x, y, reason: 'place' };
+      }
+    }
+  }
+  return { ok: true, x: cx * TILE, y: cy * TILE };
+}
+
+function pushOutUnits(w: World, b: Building): void {
+  for (const u of w.units) {
+    const r = UNIT_DEFS[u.type].radius;
+    const ex = b.half + r, ey = b.half + r;
+    const dx = u.x - b.x, dy = u.y - b.y;
+    if (Math.abs(dx) < ex && Math.abs(dy) < ey) {
+      const px = ex - Math.abs(dx), py = ey - Math.abs(dy);
+      if (px < py) u.x = b.x + Math.sign(dx || 1) * ex;
+      else u.y = b.y + Math.sign(dy || 1) * ey;
+    }
+  }
+}
+
+/* ---------------- 指令 ---------------- */
+
+export function issueCommand(w: World, c: Command): boolean {
+  if (w.gameOver) return false;
+  switch (c.type) {
+    case 'move': {
+      let any = false;
+      for (const id of c.ids) {
+        const u = w.units.find(v => v.id === id && v.side === c.side && !v.dead);
+        if (!u) continue;
+        setMoveOrder(w, u, c.x, c.y);
+        any = true;
+      }
+      if (any) ev(w, { type: 'moveMark', x: c.x, y: c.y });
+      return any;
+    }
+    case 'attack': {
+      const t = entityById(w, c.targetId);
+      if (!t || t.dead || t.side === c.side) return false;
+      let any = false;
+      for (const id of c.ids) {
+        const u = w.units.find(v => v.id === id && v.side === c.side && !v.dead);
+        if (!u) continue;
+        u.order = { kind: 'attack', targetId: c.targetId };
+        u.engageId = c.targetId;
+        u.path = [];
+        u.pathI = 0;
+        any = true;
+      }
+      return any;
+    }
+    case 'build': {
+      const d = BUILDING_DEFS[c.building];
+      const p = canPlace(w, c.side, c.building, c.x, c.y);
+      if (!p.ok) { ev(w, { type: 'denied', reason: p.reason ?? 'place' }); return false; }
+      if (w.crystals[c.side] < d.cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      w.crystals[c.side] -= d.cost;
+      const b = mkBuilding(w, c.side, c.building, p.x, p.y);
+      if (c.building === 'mine') {
+        const n = nearestFreeNode(w, p.x, p.y, 48);
+        if (n) n.mineId = b.id;
+      }
+      pushOutUnits(w, b);
+      ev(w, { type: 'built', x: b.x, y: b.y, side: c.side });
+      return true;
+    }
+    case 'train': {
+      // 兵营施工期间也允许排队，完工后自动开训
+      const hasB = w.buildings.some(b => b.side === c.side && b.type === 'barracks' && !b.dead);
+      if (!hasB) { ev(w, { type: 'denied', reason: 'nobarracks' }); return false; }
+      const d = UNIT_DEFS[c.unit];
+      if (w.crystals[c.side] < d.cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      if (w.queue[c.side].length >= 12) { ev(w, { type: 'denied', reason: 'queue' }); return false; }
+      w.crystals[c.side] -= d.cost;
+      w.queue[c.side].push(c.unit);
+      return true;
+    }
+    case 'rally': {
+      w.rally[c.side] = { x: c.x, y: c.y };
+      return true;
+    }
+  }
+}
+
+function setMoveOrder(w: World, u: Unit, x: number, y: number): void {
+  u.order = { kind: 'move', x, y };
+  u.engageId = null;
+  const p = findPath(w.blocked, u.x, u.y, x, y);
+  u.path = p ?? [];
+  u.pathI = 0;
+  u.repathT = 0.4;
+  u.stuckT = 0;
+}
+
+/* ---------------- 单位行为 ---------------- */
+
+function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null {
+  let best: Unit | Building | null = null;
+  let bs = Infinity;
+  for (const e of w.units) {
+    if (e.dead || e.side === u.side) continue;
+    const d = Math.hypot(e.x - u.x, e.y - u.y) - UNIT_DEFS[e.type].radius - UNIT_DEFS[u.type].radius;
+    if (d <= aggro && d < bs) { bs = d; best = e; }
+  }
+  if (!best) {
+    for (const b of w.buildings) {
+      if (b.dead || b.side === u.side) continue;
+      const d = Math.hypot(b.x - u.x, b.y - u.y) - b.half * 0.9 - UNIT_DEFS[u.type].radius;
+      if (d <= aggro && d < bs) { bs = d; best = b; }
+    }
+  }
+  return best;
+}
+
+function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
+  const died = applyDamage(w, t, def.damage, u.side);
+  void died;
+  ev(w, { type: 'shot', x: u.x, y: u.y, tx: t.x, ty: t.y, side: u.side, big: u.type === 'heavy' });
+  if (def.projectileSpeed > 0) {
+    const d = Math.hypot(t.x - u.x, t.y - u.y);
+    w.projectiles.push({
+      x: u.x, y: u.y, sx: u.x, sy: u.y, tx: t.x, ty: t.y,
+      t: 0, dur: Math.max(0.06, d / def.projectileSpeed),
+      side: u.side, big: u.type === 'heavy', arrow: u.type === 'archer',
+    });
+  }
+}
+
+function stepToward(u: Unit, tx: number, ty: number, speed: number, dt: number): boolean {
+  const dx = tx - u.x, dy = ty - u.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 2) return true;
+  const step = Math.min(speed * dt, d);
+  u.x += dx / d * step;
+  u.y += dy / d * step;
+  u.facing = Math.atan2(dy, dx);
+  return d - step < 2;
+}
+
+function followPath(w: World, u: Unit, dt: number, def: (typeof UNIT_DEFS)[UnitType]): void {
+  if (u.pathI >= u.path.length) {
+    if (u.order.kind === 'move') u.order = { kind: 'idle' };
+    u.path = [];
+    return;
+  }
+  const wp = u.path[u.pathI];
+  if (stepToward(u, wp.x, wp.y, def.speed, dt)) {
+    u.pathI++;
+    if (u.pathI >= u.path.length && u.order.kind === 'move') u.order = { kind: 'idle' };
+  }
+  void w;
+}
+
+function chaseTarget(w: World, u: Unit, t: Unit | Building, dt: number, def: (typeof UNIT_DEFS)[UnitType]): void {
+  if (lineClear(w.blocked, u.x, u.y, t.x, t.y)) {
+    u.path = [];
+    stepToward(u, t.x, t.y, def.speed, dt);
+    return;
+  }
+  u.repathT -= dt;
+  if (u.repathT <= 0 || u.pathI >= u.path.length) {
+    const p = findPath(w.blocked, u.x, u.y, t.x, t.y);
+    if (p) { u.path = p; u.pathI = 0; }
+    u.repathT = 0.5;
+  }
+  followPath(w, u, dt, def);
+}
+
+function updateUnit(w: World, u: Unit, dt: number): void {
+  const def = UNIT_DEFS[u.type];
+  if (u.cd > 0) u.cd = Math.max(0, u.cd - dt);
+
+  let tgt: Unit | Building | null = null;
+  if (u.engageId !== null) {
+    tgt = entityById(w, u.engageId);
+    if (!tgt || tgt.dead) { tgt = null; u.engageId = null; }
+  }
+  if (u.order.kind === 'attack') {
+    const ot = entityById(w, u.order.targetId);
+    if (!ot || ot.dead) { u.order = { kind: 'idle' }; u.engageId = null; tgt = null; }
+    else { u.engageId = ot.id; tgt = ot; }
+  }
+  if (!tgt && (u.order.kind === 'idle' || u.order.kind === 'move')) {
+    const a = acquireTarget(w, u, def.aggro);
+    if (a) { u.engageId = a.id; tgt = a; }
+  }
+
+  let triedMove = false;
+  if (tgt) {
+    const tr = entRadius(tgt);
+    const d = Math.hypot(tgt.x - u.x, tgt.y - u.y) - def.radius - tr;
+    const leash = u.order.kind === 'attack' ? Infinity : def.aggro + 70;
+    if (d <= def.range) {
+      u.facing = Math.atan2(tgt.y - u.y, tgt.x - u.x);
+      if (u.cd <= 0) { fireAt(w, u, tgt, def); u.cd = def.cooldown; }
+      u.stuckT = 0; u.lastX = u.x; u.lastY = u.y;
+      return;
+    }
+    if (d <= leash) {
+      chaseTarget(w, u, tgt, dt, def);
+      triedMove = true;
+    } else {
+      u.engageId = null;
+      tgt = null;
+    }
+  }
+  if (!triedMove && u.order.kind === 'move' && u.path.length) followPath(w, u, dt, def);
+
+  // 自愈：追击清空路径后目标消失，重新向目的地寻路
+  if (u.order.kind === 'move' && u.path.length === 0) {
+    u.repathT -= dt;
+    if (u.repathT <= 0) {
+      const p = findPath(w.blocked, u.x, u.y, u.order.x, u.order.y);
+      if (p) { u.path = p; u.pathI = 0; }
+      else u.order = { kind: 'idle' };
+      u.repathT = 0.8;
+    }
+  }
+
+  const moving = triedMove || (u.order.kind === 'move' && u.path.length > 0);
+  if (moving) {
+    u.stuckT += dt;
+    if (u.stuckT >= 0.6) {
+      const moved = Math.hypot(u.x - u.lastX, u.y - u.lastY);
+      if (moved < 5) {
+        const dest = tgt ? { x: tgt.x, y: tgt.y } : u.order.kind === 'move' ? { x: u.order.x, y: u.order.y } : null;
+        if (dest) {
+          const p = findPath(w.blocked, u.x, u.y, dest.x, dest.y);
+          if (p) { u.path = p; u.pathI = 0; u.repathT = 0.5; }
+          else { u.order = { kind: 'idle' }; u.path = []; }
+        }
+        u.x += (rngNext(w) - 0.5) * 6;
+        u.y += (rngNext(w) - 0.5) * 6;
+      }
+      u.lastX = u.x; u.lastY = u.y;
+      u.stuckT = 0;
+    }
+  } else {
+    u.stuckT = 0;
+    u.lastX = u.x; u.lastY = u.y;
+  }
+}
+
+/* ---------------- 分离 / 推挤 ---------------- */
+
+function separate(w: World): void {
+  const us = w.units;
+  const n = us.length;
+  for (let i = 0; i < n; i++) {
+    const a = us[i];
+    if (a.dead) continue;
+    const ra = UNIT_DEFS[a.type].radius;
+    for (let j = i + 1; j < n; j++) {
+      const b = us[j];
+      if (b.dead) continue;
+      const rr = ra + UNIT_DEFS[b.type].radius;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      if (dx > rr || dx < -rr || dy > rr || dy < -rr) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= rr * rr) continue;
+      const d = Math.sqrt(d2) || 0.01;
+      const p = (rr - d) / 2 / d;
+      a.x -= dx * p; a.y -= dy * p;
+      b.x += dx * p; b.y += dy * p;
+    }
+  }
+  for (const u of w.units) {
+    if (u.dead) continue;
+    const r = UNIT_DEFS[u.type].radius;
+    u.x = Math.max(r, Math.min(MAP_W - r, u.x));
+    u.y = Math.max(r, Math.min(MAP_H - r, u.y));
+    for (const b of w.buildings) {
+      if (b.dead) continue;
+      const ex = b.half + r, ey = b.half + r;
+      const dx = u.x - b.x, dy = u.y - b.y;
+      if (Math.abs(dx) < ex && Math.abs(dy) < ey) {
+        const px = ex - Math.abs(dx), py = ey - Math.abs(dy);
+        if (px < py) u.x = b.x + Math.sign(dx || 1) * ex;
+        else u.y = b.y + Math.sign(dy || 1) * ey;
+      }
+    }
+  }
+}
+
+/* ---------------- 经济 / 生产 / 建筑 ---------------- */
+
+function updateEconomy(w: World, dt: number): void {
+  const inc = [0, 0];
+  for (const b of w.buildings) {
+    if (b.dead || b.buildT > 0) continue;
+    const d = BUILDING_DEFS[b.type];
+    if (d.income) inc[b.side] += d.income;
+  }
+  inc[1] *= DIFFICULTY[w.difficulty].incomeMult;
+  w.income = inc;
+  w.crystals[0] += inc[0] * dt;
+  w.crystals[1] += inc[1] * dt;
+}
+
+function spawnFrom(w: World, b: Building): void {
+  const t = b.trainType as UnitType;
+  const d = UNIT_DEFS[t];
+  const rally = w.rally[b.side];
+  let px = b.x + b.half + d.radius + 4, py = b.y;
+  const base = Math.atan2(rally.y - b.y, rally.x - b.x);
+  let found = false;
+  for (let k = 0; k < 12 && !found; k++) {
+    const a = base + (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6);
+    const x = b.x + Math.cos(a) * (b.half + d.radius + 4);
+    const y = b.y + Math.sin(a) * (b.half + d.radius + 4);
+    if (isBlockedTile(w.blocked, Math.floor(x / TILE), Math.floor(y / TILE))) continue;
+    px = x; py = y; found = true;
+  }
+  const u = addUnit(w, b.side, t, px, py);
+  setMoveOrder(w, u, rally.x, rally.y);
+}
+
+function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Unit {
+  const d = UNIT_DEFS[type];
+  const u: Unit = {
+    id: w.nextId++,
+    side, type,
+    x, y,
+    hp: d.hp, maxHp: d.hp,
+    cd: rngNext(w) * 0.3,
+    facing: side === 0 ? -Math.PI / 2 : Math.PI / 2,
+    order: { kind: 'idle' },
+    engageId: null,
+    path: [], pathI: 0,
+    repathT: 0, stuckT: 0,
+    lastX: x, lastY: y,
+    dead: false,
+  };
+  w.units.push(u);
+  return u;
+}
+
+function updateProduction(w: World, dt: number): void {
+  for (const s of [0, 1] as Side[]) {
+    if (w.queue[s].length) {
+      const free = w.buildings.filter(b => b.side === s && b.type === 'barracks' && !b.dead && b.buildT <= 0 && b.trainType === null);
+      for (const b of free) {
+        if (!w.queue[s].length) break;
+        const t = w.queue[s][0];
+        const d = UNIT_DEFS[t];
+        if (w.popUsed[s] + d.pop > POP_CAP) break;
+        w.queue[s].shift();
+        b.trainType = t;
+        b.trainT = d.trainTime;
+        w.popUsed[s] += d.pop;
+      }
+    }
+    for (const b of w.buildings) {
+      if (b.side !== s || b.type !== 'barracks' || b.dead || b.buildT > 0 || !b.trainType) continue;
+      b.trainT -= dt;
+      if (b.trainT <= 0) {
+        spawnFrom(w, b);
+        b.trainType = null;
+      }
+    }
+  }
+}
+
+function updateBuildings(w: World, dt: number): void {
+  for (const b of w.buildings) {
+    if (b.dead) continue;
+    if (b.buildT > 0) {
+      b.buildT -= dt;
+      if (b.buildT <= 0) {
+        b.buildT = 0;
+        ev(w, { type: 'built', x: b.x, y: b.y, side: b.side });
+      }
+      continue;
+    }
+    const wpn = BUILDING_DEFS[b.type].weapon;
+    if (!wpn) continue;
+    b.cd = Math.max(0, b.cd - dt);
+    let best: Unit | null = null;
+    let bd = Infinity;
+    for (const u of w.units) {
+      if (u.dead || u.side === b.side) continue;
+      const d = Math.hypot(u.x - b.x, u.y - b.y) - UNIT_DEFS[u.type].radius;
+      if (d <= wpn.range && d < bd) { bd = d; best = u; }
+    }
+    if (best && b.cd <= 0) {
+      b.cd = wpn.cooldown;
+      b.facing = Math.atan2(best.y - b.y, best.x - b.x);
+      applyDamage(w, best, wpn.damage, b.side);
+      ev(w, { type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y, side: b.side, big: false });
+      w.projectiles.push({
+        x: b.x, y: b.y, sx: b.x, sy: b.y, tx: best.x, ty: best.y,
+        t: 0, dur: Math.max(0.06, bd / wpn.projectileSpeed),
+        side: b.side, big: false, arrow: false,
+      });
+    }
+  }
+}
+
+/* ---------------- 清理与胜负 ---------------- */
+
+function cleanup(w: World): void {
+  const deadIds = new Set<number>();
+
+  const deadUnits = w.units.filter(u => u.dead);
+  for (const u of deadUnits) {
+    deadIds.add(u.id);
+    ev(w, { type: 'die', x: u.x, y: u.y, r: UNIT_DEFS[u.type].radius, side: u.side });
+    w.popUsed[u.side] -= UNIT_DEFS[u.type].pop;
+  }
+  if (deadUnits.length) w.units = w.units.filter(u => !u.dead);
+
+  const deadB = w.buildings.filter(b => b.dead);
+  for (const b of deadB) {
+    deadIds.add(b.id);
+    ev(w, { type: 'boom', x: b.x, y: b.y, big: b.type === 'hq' });
+    setBuildingTiles(w, b, 0);
+    if (b.type === 'mine') {
+      const n = w.nodes.find(n => n.mineId === b.id);
+      if (n) n.mineId = null;
+    }
+    if (b.type === 'barracks') {
+      if (b.trainType) {
+        const d = UNIT_DEFS[b.trainType];
+        w.crystals[b.side] += d.cost;
+        w.popUsed[b.side] -= d.pop;
+        b.trainType = null;
+      }
+      const hasOther = w.buildings.some(o => o !== b && !o.dead && o.side === b.side && o.type === 'barracks' && o.buildT <= 0);
+      if (!hasOther) {
+        for (const t of w.queue[b.side]) w.crystals[b.side] += UNIT_DEFS[t].cost;
+        w.queue[b.side] = [];
+      }
+    }
+    if (b.type === 'hq' && !w.gameOver) {
+      w.gameOver = { winner: (1 - b.side) as Side };
+      ev(w, { type: 'gameOver', winner: w.gameOver.winner });
+    }
+  }
+  if (deadB.length) w.buildings = w.buildings.filter(b => !b.dead);
+
+  if (deadIds.size) {
+    for (const u of w.units) {
+      if (u.engageId !== null && deadIds.has(u.engageId)) u.engageId = null;
+    }
+  }
+}
+
+/* ---------------- 主步进 ---------------- */
+
+export function stepWorld(w: World, dt: number): void {
+  if (w.gameOver) return;
+  w.time += dt;
+  w.tick++;
+  aiThink(w, dt);
+  updateEconomy(w, dt);
+  updateProduction(w, dt);
+  updateBuildings(w, dt);
+  for (const u of w.units) {
+    if (!u.dead) updateUnit(w, u, dt);
+  }
+  separate(w);
+  for (let i = w.projectiles.length - 1; i >= 0; i--) {
+    const p = w.projectiles[i];
+    p.t += dt;
+    if (p.t >= p.dur) {
+      w.projectiles.splice(i, 1);
+      continue;
+    }
+    const k = p.t / p.dur;
+    p.x = p.sx + (p.tx - p.sx) * k;
+    p.y = p.sy + (p.ty - p.sy) * k;
+  }
+  cleanup(w);
+}
+
+/* ---------------- 拾取（输入层用） ---------------- */
+
+export function pickUnitAt(w: World, x: number, y: number, side: Side | null): Unit | null {
+  let best: Unit | null = null;
+  let bd = Infinity;
+  for (const u of w.units) {
+    if (u.dead) continue;
+    if (side !== null && u.side !== side) continue;
+    const d = Math.hypot(u.x - x, u.y - y);
+    if (d <= UNIT_DEFS[u.type].radius + 16 && d < bd) { bd = d; best = u; }
+  }
+  return best;
+}
+
+export function pickBuildingAt(w: World, x: number, y: number): Building | null {
+  for (const b of w.buildings) {
+    if (b.dead) continue;
+    if (Math.abs(x - b.x) <= b.half + 8 && Math.abs(y - b.y) <= b.half + 8) return b;
+  }
+  return null;
+}
+
+export function unitsInRect(w: World, x0: number, y0: number, x1: number, y1: number, side: Side): Unit[] {
+  const ax = Math.min(x0, x1), ay = Math.min(y0, y1);
+  const bx = Math.max(x0, x1), by = Math.max(y0, y1);
+  return w.units.filter(u => !u.dead && u.side === side && u.x >= ax && u.x <= bx && u.y >= ay && u.y <= by);
+}
