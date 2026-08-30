@@ -151,6 +151,12 @@ export interface World {
   nextId: number;
   events: SimEvent[];
   gameOver: null | { winner: Side };
-  stats: { kills: number[] };
+  /** 战报统计：kills[s] = s 方的击杀数（即对方的阵亡数） */
+  stats: {
+    kills: number[];
+    trained: number[];   // 实际造出的兵
+    peakPop: number[];   // 峰值兵力
+    earned: number[];    // 水晶总收入
+  };
   ai: AIState;
 }

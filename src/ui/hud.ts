@@ -45,7 +45,7 @@ export class Hud {
     rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
-    resultTitle: $('resultTitle'), resultStats: $('resultStats'),
+    resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
     sound: $('btnSound'),
   };
   private buildBtns = new Map<BuildingType, HTMLButtonElement>();
@@ -121,7 +121,24 @@ export class Hud {
     this.els.resultTitle.className = win ? 'win' : 'lose';
     const m = Math.floor(world.time / 60), s = Math.floor(world.time % 60);
     this.els.resultStats.textContent =
-      `用时 ${m}:${String(s).padStart(2, '0')} · 歼灭敌军 ${world.stats.kills[0]} · 难度 ${DIFFICULTY[world.difficulty].label}`;
+      `用时 ${m}:${String(s).padStart(2, '0')} · 难度 ${DIFFICULTY[world.difficulty].label}`;
+
+    // 战报：给玩家一个"再来一局"的理由 —— 看得出这局输在哪
+    const st = world.stats;
+    const rows: [string, string][] = [
+      ['歼灭敌军', String(st.kills[0])],
+      ['己方阵亡', String(st.kills[1])],
+      ['累计造兵', String(st.trained[0])],
+      ['峰值兵力', `${st.peakPop[0]}/${POP_CAP}`],
+      ['水晶总收入', String(Math.round(st.earned[0]))],
+      ['敌方总收入', String(Math.round(st.earned[1]))],
+    ];
+    this.els.resultDetail.textContent = '';
+    for (const [k, v] of rows) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${k}</span><b>${v}</b>`;
+      this.els.resultDetail.appendChild(li);
+    }
     this.els.result.classList.remove('hidden');
   }
 

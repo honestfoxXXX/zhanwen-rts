@@ -102,7 +102,7 @@ export function createWorld(difficulty: World['difficulty'], seed: number): Worl
     nextId: 1,
     events: [],
     gameOver: null,
-    stats: { kills: [0, 0] },
+    stats: { kills: [0, 0], trained: [0, 0], peakPop: [0, 0], earned: [0, 0] },
     ai: {
       thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0,
       scout: { infantry: 0, archer: 0, heavy: 0 },
@@ -174,10 +174,15 @@ function placeAt(w: World, side: Side, x: number, y: number, isMine: boolean): P
   for (const [dx, dy] of [[-1, 0], [0, 0], [-1, -1], [0, -1]] as const) {
     if (isBlockedTile(w.blocked, cx + dx, cy + dy)) return { ok: false, x, y, reason: 'place' };
   }
-  // 半场限制（矿场除外，可争夺中路矿点）
+  // 半场限制（矿场除外，可争夺中路矿点）。
+  // 建筑占位是 (cy-1 .. cy) 两行，所以对称边界要让双方刚好各自贴住中线：
+  //   玩家（下半场）最小行 25 → 顶边 (25-1)*40 = 960
+  //   敌方（上半场）最大行 23 → 底边 (23+1)*40 = 960
+  // 旧代码用的是 19 / 17，导致双方边界都落在 y=720：玩家能越线 240 建造，
+  // 且可建纵深比敌方多 440，是完全不对称的。
   if (!isMine) {
-    if (side === 0 && cy < 19) return { ok: false, x, y, reason: 'place' };
-    if (side === 1 && cy > 17) return { ok: false, x, y, reason: 'place' };
+    if (side === 0 && cy < 25) return { ok: false, x, y, reason: 'place' };
+    if (side === 1 && cy > 23) return { ok: false, x, y, reason: 'place' };
     // 不能压住矿点
     for (const n of w.nodes) {
       if (Math.abs(n.x - cx * TILE) < 66 && Math.abs(n.y - cy * TILE) < 66) {
@@ -532,6 +537,10 @@ function updateEconomy(w: World, dt: number): void {
   w.income = inc;
   w.crystals[0] += inc[0] * dt;
   w.crystals[1] += inc[1] * dt;
+  for (const s of [0, 1] as Side[]) {
+    w.stats.earned[s] += inc[s] * dt;
+    if (w.popUsed[s] > w.stats.peakPop[s]) w.stats.peakPop[s] = w.popUsed[s];
+  }
 }
 
 function spawnFrom(w: World, b: Building): void {
@@ -549,6 +558,7 @@ function spawnFrom(w: World, b: Building): void {
     px = x; py = y; found = true;
   }
   const u = addUnit(w, b.side, t, px, py);
+  w.stats.trained[b.side]++;
   setMoveOrder(w, u, rally.x, rally.y);
 }
 
@@ -754,7 +764,7 @@ interface WorldSnapshot {
   units: Unit[]; buildings: Building[]; nodes: CrystalNode[]; projectiles: Projectile[];
   crystals: number[]; popUsed: number[]; income: number[]; queue: UnitType[][];
   rally: Vec[]; blocked: number[]; nextId: number;
-  gameOver: null | { winner: Side }; stats: { kills: number[] }; ai: AIState;
+  gameOver: null | { winner: Side }; stats: World['stats']; ai: AIState;
 }
 
 export function serializeWorld(w: World): string {

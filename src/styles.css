@@ -200,6 +200,14 @@ button:disabled { opacity: 0.35; cursor: default; }
 #resultScr #resultTitle.win { color: #34d399; }
 #resultScr #resultTitle.lose { color: #fb7185; }
 #resultStats { color: #94a3b8; font-size: 14px; }
+#resultDetail { margin: 2px 0 6px; min-width: 210px; }
+#resultDetail li {
+  display: flex; justify-content: space-between; gap: 18px;
+  font-size: 13px; color: #94a3b8;
+  padding: 4px 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+#resultDetail li:last-child { border-bottom: none; }
+#resultDetail b { color: #e2e8f0; font-variant-numeric: tabular-nums; }
 
 #tips h3 { font-size: 20px; letter-spacing: 0.15em; }
 #tips li { font-size: 13.5px; color: #cbd5e1; }

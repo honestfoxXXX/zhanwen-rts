@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 单元测试
+        run: npm run test
+
+      - name: 生产构建
+        run: npm run build
+
+      # 只跑小样本，目的是确保跑批脚本本身不会崩，而不是校验平衡数值
+      - name: 平衡脚本冒烟
+        run: npm run balance -- 2 120

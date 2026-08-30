@@ -53,6 +53,18 @@ describe('economy', () => {
     // 己方半场 (320, 900)
     expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 360, y: 1100 })).toBe(true);
   });
+
+  // 守护回归：旧代码的边界是 19/17，双方实际都停在 y=720，
+  // 玩家因此能越线 240 建造、可建纵深比敌方多 440
+  it('双方的建造范围关于中线对称，谁都不能越线', () => {
+    w.crystals[0] = 5000;
+    w.crystals[1] = 5000;
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 280, y: 800 })).toBe(false);
+    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 280, y: 1120 })).toBe(false);
+    // 各自贴住中线的一侧都应可建（玩家 y>=1000，敌方 y<=920）
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 280, y: 1000 })).toBe(true);
+    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 280, y: 920 })).toBe(true);
+  });
 });
 
 describe('combat', () => {
