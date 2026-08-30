@@ -46,6 +46,7 @@ export class Hud {
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
+    tipsMap: $('tipsMap'),
     sound: $('btnSound'),
   };
   private buildBtns = new Map<BuildingType, HTMLButtonElement>();
@@ -144,6 +145,11 @@ export class Hud {
 
   showTips(): void {
     this.els.tips.classList.remove('hidden');
+  }
+
+  /** 首局把地形写进提示页；之后每局靠 toast 提示 */
+  setMapBrief(name: string, brief: string): void {
+    this.els.tipsMap.textContent = `本局地形：${name} —— ${brief}`;
   }
 
   hideTips(): void {

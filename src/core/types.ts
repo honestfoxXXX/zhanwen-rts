@@ -122,6 +122,7 @@ export interface AIState {
   attacking: boolean;
   waveCd: number;
   waveStart: number; // 出击时部队总血量，用于判断溃退
+  waveAt: number;    // 本波开始的时刻（world.time），用于给波次设时长上限
   /** 侦查到的玩家兵种构成（累计观测量），用于针对性调整出兵配比 */
   scout: Record<UnitType, number>;
   /** 当前波次的进攻目标；为空表示尚未确定 */
@@ -136,6 +137,8 @@ export interface World {
   seed: number;
   rngState: number;
   difficulty: Difficulty;
+  /** 使用的地图索引（指向 config 的 MAPS），决定岩石与矿点布局 */
+  map: number;
   units: Unit[];
   buildings: Building[];
   nodes: CrystalNode[];

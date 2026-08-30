@@ -1,6 +1,7 @@
 import {
-  BUILDING_DEFS, COLS, HQ_POS, MAP_H, MAP_W, ROCK_TILES, ROWS, TILE, UNIT_DEFS,
+  BUILDING_DEFS, COLS, HQ_POS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
+import type { MapDef } from '../core/config';
 import type { Building, Unit, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
@@ -29,8 +30,8 @@ export type GhostInfo = { type: Building['type']; x: number; y: number; valid: b
 
 let bgCanvas: HTMLCanvasElement | null = null;
 
-/** 预渲染静态地面（棋盘 + 装饰 + 岩石 + 前线 + 基地区） */
-export function buildBackground(): HTMLCanvasElement {
+/** 预渲染静态地面（棋盘 + 装饰 + 岩石 + 前线 + 基地区）。换地图需要重新调用 */
+export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = MAP_W;
   c.height = MAP_H;
@@ -111,7 +112,7 @@ export function buildBackground(): HTMLCanvasElement {
   g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
 
   // ---- 岩石 ----
-  for (const [cx, cy] of ROCK_TILES) {
+  for (const [cx, cy] of map.rocks) {
     const x = cx * TILE, y = cy * TILE;
     g.fillStyle = C.rock;
     roundRect(g, x + 2, y + 2, TILE - 4, TILE - 4, 7);
@@ -152,8 +153,8 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.closePath();
 }
 
-export function initRenderer(): void {
-  bgCanvas = buildBackground();
+export function initRenderer(map: MapDef = MAPS[0]): void {
+  bgCanvas = buildBackground(map);
 }
 
 export interface RenderUI {

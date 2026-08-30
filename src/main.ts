@@ -1,4 +1,4 @@
-import { BUILDING_DEFS } from './core/config';
+import { BUILDING_DEFS, MAPS } from './core/config';
 import { canPlace, createWorld, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
 import type { World } from './core/types';
@@ -117,7 +117,14 @@ hud.setSoundLabel(isMuted() ? '关' : '开');
 
 function startGame(diff: World['difficulty']): void {
   initAudio();
-  world = createWorld(diff, (Date.now() & 0x7fffffff) || 12345);
+  // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建
+  const seed = (Date.now() & 0x7fffffff) || 12345;
+  const mapIndex = seed % MAPS.length;
+  const map = MAPS[mapIndex];
+  initRenderer(map);
+  world = createWorld(diff, seed, mapIndex);
+  hud.setMapBrief(map.name, map.brief);
+  hud.toast(`地形：${map.name} —— ${map.brief}`);
   ui.selection = [];
   input.cancelMode();
   fx.clear();

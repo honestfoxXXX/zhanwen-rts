@@ -1,6 +1,6 @@
 import {
-  BUILDING_DEFS, COLS, DIFFICULTY, HQ_POS, MAP_H, MAP_W, NODES, POP_CAP,
-  ROCK_TILES, ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
+  BUILDING_DEFS, COLS, DIFFICULTY, HQ_POS, MAP_H, MAPS, MAP_W, POP_CAP,
+  ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
 } from './config';
 import { findPath, isBlockedTile, lineClear, nearestFreeTile } from './pathfinding';
 import { rngNext } from './rng';
@@ -75,9 +75,11 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
 
 /* ---------------- 世界创建 ---------------- */
 
-export function createWorld(difficulty: World['difficulty'], seed: number): World {
+/** mapIndex 省略时用默认地图（中央关口），既有测试因此不受影响 */
+export function createWorld(difficulty: World['difficulty'], seed: number, mapIndex = 0): World {
+  const map = MAPS[mapIndex % MAPS.length];
   const blocked = new Uint8Array(COLS * ROWS);
-  for (const [cx, cy] of ROCK_TILES) blocked[cy * COLS + cx] = 1;
+  for (const [cx, cy] of map.rocks) blocked[cy * COLS + cx] = 1;
 
   const w: World = {
     tick: 0,
@@ -85,9 +87,10 @@ export function createWorld(difficulty: World['difficulty'], seed: number): Worl
     seed,
     rngState: seed | 0,
     difficulty,
+    map: mapIndex % MAPS.length,
     units: [],
     buildings: [],
-    nodes: NODES.map((n, i) => ({ id: i + 1, x: n.x, y: n.y, mineId: null })),
+    nodes: map.nodes.map((n, i) => ({ id: i + 1, x: n.x, y: n.y, mineId: null })),
     projectiles: [],
     crystals: [START_CRYSTAL, START_CRYSTAL],
     popUsed: [0, 0],
@@ -104,7 +107,7 @@ export function createWorld(difficulty: World['difficulty'], seed: number): Worl
     gameOver: null,
     stats: { kills: [0, 0], trained: [0, 0], peakPop: [0, 0], earned: [0, 0] },
     ai: {
-      thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0,
+      thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0, waveAt: 0,
       scout: { infantry: 0, archer: 0, heavy: 0 },
       goal: null,
       waves: 0,
@@ -761,6 +764,7 @@ export function hashWorld(w: World): number {
 /** 可 JSON 化的世界快照（blocked 转普通数组，索引与事件不入库） */
 interface WorldSnapshot {
   tick: number; time: number; seed: number; rngState: number; difficulty: World['difficulty'];
+  map: number;
   units: Unit[]; buildings: Building[]; nodes: CrystalNode[]; projectiles: Projectile[];
   crystals: number[]; popUsed: number[]; income: number[]; queue: UnitType[][];
   rally: Vec[]; blocked: number[]; nextId: number;
@@ -770,6 +774,7 @@ interface WorldSnapshot {
 export function serializeWorld(w: World): string {
   const s: WorldSnapshot = {
     tick: w.tick, time: w.time, seed: w.seed, rngState: w.rngState, difficulty: w.difficulty,
+    map: w.map,
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
@@ -783,6 +788,7 @@ export function deserializeWorld(json: string): World {
   const s = JSON.parse(json) as WorldSnapshot;
   const w: World = {
     tick: s.tick, time: s.time, seed: s.seed, rngState: s.rngState, difficulty: s.difficulty,
+    map: s.map,
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),

@@ -182,13 +182,17 @@ export function aiThink(w: World, dt: number): void {
   if (!st.defending && !st.attacking && st.waveCd <= 0 && armyPop >= d.wavePop && army.length >= 4) {
     st.attacking = true;
     st.waveStart = armyHp;
+    st.waveAt = w.time;
     st.goal = pickGoal(w, hq, st.waves); // 第 0 波直捣主基地，之后隔波骚扰矿场
     st.waves++;
     orderArmy(w, army, st.goal.x, st.goal.y);
     pushEvent(w, { type: 'wave' }); // 敌袭预警
   } else if (st.attacking) {
     const nowHp = army.reduce((n, u) => n + u.hp, 0);
-    if (nowHp < st.waveStart * 0.35 || armyPop === 0) {
+    // 波次必须有终点。否则首波一旦占上风，AI 会一直续攻、永远走不到收兵分支，
+    // 于是 st.waveCd 永远不会被写回，waveCd 这个难度参数彻底失效，"波次"也名存实亡。
+    const expired = w.time - st.waveAt > d.waveMax;
+    if (nowHp < st.waveStart * 0.35 || armyPop === 0 || expired) {
       st.attacking = false;
       st.goal = null;
       st.waveCd = d.waveCd;

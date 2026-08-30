@@ -9,11 +9,13 @@
  * 用来观察不同难度下的胜率与单局时长。改完 config.ts 后跑一遍，
  * 就能判断数值改动是变好还是变坏。
  */
-import { BUILDING_DEFS, DIFFICULTY, UNIT_DEFS } from '../src/core/config';
+import { BUILDING_DEFS, DIFFICULTY, MAPS, UNIT_DEFS } from '../src/core/config';
 import { canPlace, createWorld, issueCommand, stepWorld } from '../src/core/sim';
 import type { Difficulty, UnitType, World } from '../src/core/types';
 
 const STEP = 1 / 60;
+
+const forcedMap = process.env.ZW_MAP !== undefined ? Number(process.env.ZW_MAP) : null;
 
 // A/B 对照：关掉克制关系跑一遍基线
 if (process.env.ZW_NO_COUNTER === '1') {
@@ -80,7 +82,8 @@ interface Result {
 }
 
 function runGame(diff: Difficulty, seed: number, maxSec: number, scripted: boolean): { winner: 0 | 1 | null; time: number; kills: number } {
-  const w = createWorld(diff, seed);
+  // ZW_MAP 指定时固定跑该图，否则按种子轮换（与 main.ts 的开局逻辑一致）
+  const w = createWorld(diff, seed, forcedMap ?? seed % MAPS.length);
   let acc = 0;
   const steps = Math.round(maxSec / STEP);
   for (let i = 0; i < steps && !w.gameOver; i++) {
@@ -126,5 +129,6 @@ function run(label: string, scripted: boolean, games: number, maxSec: number): v
 const games = Number(process.argv[2] ?? 12);
 const maxSec = Number(process.argv[3] ?? 600);
 console.log(`兵种克制：${process.env.ZW_NO_COUNTER === '1' ? '关闭（对照基线）' : '开启'}`);
+console.log(`地形：${forcedMap !== null ? MAPS[forcedMap].name : `${MAPS.length} 张轮换`}`);
 run('脚本玩家 vs AI', true, games, maxSec);
 run('玩家完全不操作（摆烂基线）', false, Math.max(3, Math.round(games / 3)), maxSec);
