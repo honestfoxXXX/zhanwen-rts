@@ -107,24 +107,24 @@ export function play(name: SoundName, vol = 1): void {
   }
   const v = Math.max(0.06, Math.min(1, vol));
   switch (name) {
-    case 'shot': // 弦/箭：高频噪声"嗖" + 短促方波
-      noise(0.06, jitter(3600), 700, 0.09 * v, 0, 'bandpass');
-      tone(jitter(700), 190, 0.06, 'square', 0.022 * v);
+    case 'shot': // 箭矢破空：高频噪声"嗖" + 轻微弦振
+      noise(0.06, jitter(2600), 700, 0.09 * v, 0, 'bandpass');
+      tone(jitter(700), 190, 0.06, 'square', 0.012 * v);
       break;
     case 'die': // 闷响下滑 + 一撮碎裂噪声
       noise(0.16, 1400, 220, 0.07 * v);
       tone(jitter(300), 62, 0.2, 'sawtooth', 0.045 * v);
       break;
-    case 'boom': // 低频冲击 + 宽频轰鸣 + 金属回响
-      tone(96, 34, 0.42, 'sine', 0.26 * v);
-      noise(0.5, 1100, 55, 0.24 * v);
+    case 'boom': // 低频冲击 + 宽频轰鸣 + 金属回响（投石机坍塌的低频）
+      tone(82, 34, 0.42, 'sine', 0.26 * v);
+      noise(0.65, 1100, 55, 0.24 * v);
       tone(330, 48, 0.24, 'sawtooth', 0.05 * v, 0.02);
       noise(0.7, 420, 90, 0.06 * v, 0.08);
       break;
-    case 'built': // 上行双音 + 落地闷响
+    case 'built': // 上行双音 + 落锤闷响
       tone(jitter(430), 650, 0.1, 'sine', 0.07 * v);
       tone(jitter(650), 880, 0.1, 'sine', 0.06 * v, 0.09);
-      noise(0.09, 600, 160, 0.06 * v, 0.16);
+      noise(0.09, 400, 160, 0.06 * v, 0.16);
       break;
     case 'train':
       tone(jitter(500), 720, 0.08, 'sine', 0.06 * v);
@@ -133,10 +133,9 @@ export function play(name: SoundName, vol = 1): void {
     case 'move':
       tone(jitter(340), 490, 0.06, 'sine', 0.045 * v);
       break;
-    case 'alarm': // 三连下行，急促
-      tone(540, 320, 0.16, 'square', 0.07 * v);
-      tone(440, 250, 0.18, 'square', 0.07 * v, 0.17);
-      tone(360, 200, 0.2, 'square', 0.07 * v, 0.34);
+    case 'alarm': // 战号角：双锯齿叠出轻微拍频
+      tone(196, 147, 0.55, 'sawtooth', 0.06 * v);
+      tone(198, 149, 0.55, 'sawtooth', 0.06 * v);
       break;
     case 'deny':
       tone(230, 150, 0.14, 'square', 0.055 * v);
@@ -144,7 +143,8 @@ export function play(name: SoundName, vol = 1): void {
     case 'ui':
       tone(jitter(620), 820, 0.05, 'sine', 0.05 * v);
       break;
-    case 'win':
+    case 'win': // 号角齐奏：先落一个下行根音
+      tone(392, 392, 0.18, 'triangle', 0.09);
       [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.17, 'triangle', 0.09, i * 0.13));
       noise(0.9, 900, 2400, 0.02, 0.1, 'highpass'); // 一缕"扬起"的空气声
       break;
