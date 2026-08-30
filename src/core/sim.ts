@@ -102,9 +102,10 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     popUsed: new Array(players).fill(0),
     income: new Array(players).fill(0),
     queue: Array.from({ length: players }, () => [] as UnitType[]),
-    // 默认集结点：玩家（side 0）大踏步前压，AI 贴着自己基地集结。
-    // 这种不对称是 1vN 平衡的关键 —— 让双方主力在我方半场碰撞，AI 才打不进家。
-    // 若改成对称集结点，碰撞线会整体向玩家推移，普通档胜率会从 ~80% 塌到 0。
+    // 默认集结点：按出生位置推导 —— 南侧（纵深最深）出生点前压 560，其余出生点贴基地 180。
+    // 这是「位置规则」而非「身份规则」：谁的出生点在南边谁就前压，与"是否玩家"无关。
+    // 保持不对称是 1vN 平衡的关键 —— 让主力在纵深更深的一方半场碰撞，浅方才打不进家。
+    // 若改成对称集结点，碰撞线会整体向深方推移，普通档胜率会从 ~80% 塌到 0。
     rally: map.spawns.map((s, i) => {
       const dx = midX - s.pos.x, dy = midY - s.pos.y;
       const len = Math.hypot(dx, dy) || 1;
@@ -144,7 +145,8 @@ function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: numb
     hp: d.hp, maxHp: d.hp,
     buildT: instant ? 0 : d.buildTime,
     cd: 0,
-    facing: side === 0 ? -Math.PI / 2 : Math.PI / 2,
+    // 朝向按出生位置推导（面朝地图中心），不依赖"哪一方是玩家"的身份假设
+    facing: Math.atan2(MAP_H / 2 - y, MAP_W / 2 - x),
     trainType: null, trainT: 0,
     rally: null,
     dead: false,
@@ -594,7 +596,7 @@ function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Un
     x, y,
     hp: d.hp, maxHp: d.hp,
     cd: rngNext(w) * 0.3,
-    facing: side === 0 ? -Math.PI / 2 : Math.PI / 2,
+    facing: Math.atan2(MAP_H / 2 - y, MAP_W / 2 - x),
     order: { kind: 'idle' },
     engageId: null,
     path: [], pathI: 0,
