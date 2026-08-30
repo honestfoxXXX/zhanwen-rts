@@ -22,20 +22,63 @@ describe('地图', () => {
             expect(mirror, `矿点 (${n.x},${n.y}) 缺少中心对称的镜像点`).toBeDefined();
           }
         } else {
-          // 三方：竖屏放不下三个等距基地，改用左右镜像，保证两个 AI 完全等价
+          // 三方：矿点绕三角形质心精确 120° 旋转对称 —— 三方到每个矿点的距离完全一致
+          const cx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / 3;
+          const cy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / 3;
+          const rot = (n: { x: number; y: number }, k: number) => {
+            const a = (k * 2 * Math.PI) / 3;
+            const dx = n.x - cx, dy = n.y - cy;
+            return { x: cx + dx * Math.cos(a) - dy * Math.sin(a), y: cy + dx * Math.sin(a) + dy * Math.cos(a) };
+          };
           for (const n of map.nodes) {
-            const mirror = map.nodes.find(m => m.x === MAP_W - n.x && m.y === n.y);
-            expect(mirror, `矿点 (${n.x},${n.y}) 缺少左右镜像点`).toBeDefined();
+            for (let k = 1; k <= 2; k++) {
+              const r = rot(n, k);
+              const hit = map.nodes.find(m => Math.abs(m.x - r.x) <= 2 && Math.abs(m.y - r.y) <= 2);
+              expect(hit, `矿点 (${n.x},${n.y}) 缺少 120° 旋转对称点`).toBeDefined();
+            }
           }
         }
       });
 
-      it('两个 AI 的建造区面积相等且互不重叠', () => {
+      it('三方出生点构成等边三角形，任意两方间距相等', () => {
         if (map.players < 3) return;
-        const a = map.spawns[1].build, b = map.spawns[2].build;
-        expect((a.x1 - a.x0 + 1) * (a.y1 - a.y0 + 1)).toBe((b.x1 - b.x0 + 1) * (b.y1 - b.y0 + 1));
-        const overlap = a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
-        expect(overlap, '两个 AI 的建造区重叠了，会互相抢地皮').toBe(false);
+        const d = (a: typeof map.spawns[0], b: typeof map.spawns[0]) =>
+          Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
+        const d01 = d(map.spawns[0], map.spawns[1]);
+        const d12 = d(map.spawns[1], map.spawns[2]);
+        const d02 = d(map.spawns[0], map.spawns[2]);
+        expect(Math.abs(d01 - d12), '0-1 与 1-2 间距不等').toBeLessThanOrEqual(1);
+        expect(Math.abs(d01 - d02), '0-1 与 0-2 间距不等').toBeLessThanOrEqual(1);
+      });
+
+      it('三方建造区面积相等且互不重叠', () => {
+        if (map.players < 3) return;
+        const areas = map.spawns.map(sp => (sp.build.x1 - sp.build.x0 + 1) * (sp.build.y1 - sp.build.y0 + 1));
+        expect(new Set(areas).size, '三方建造区面积必须相等').toBe(1);
+        for (let a = 0; a < map.players; a++) {
+          for (let b = a + 1; b < map.players; b++) {
+            const ra = map.spawns[a].build, rb = map.spawns[b].build;
+            const overlap = ra.x0 <= rb.x1 && rb.x0 <= ra.x1 && ra.y0 <= rb.y1 && rb.y0 <= ra.y1;
+            expect(overlap, `建造区 ${a} 与 ${b} 重叠了，会互相抢地皮`).toBe(false);
+          }
+        }
+      });
+
+      it('三方岩石近似 120° 旋转对称（格点取整，容差 1.2 格）', () => {
+        if (map.players < 3) return;
+        const cx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / 3;
+        const cy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / 3;
+        for (const [tx, ty] of map.rocks) {
+          const wx = (tx + 0.5) * TILE, wy = (ty + 0.5) * TILE;
+          for (let k = 1; k <= 2; k++) {
+            const a = (k * 2 * Math.PI) / 3;
+            const dx = wx - cx, dy = wy - cy;
+            const rx = (cx + dx * Math.cos(a) - dy * Math.sin(a)) / TILE - 0.5;
+            const ry = (cy + dx * Math.sin(a) + dy * Math.cos(a)) / TILE - 0.5;
+            const hit = map.rocks.some(([mx, my]) => Math.abs(mx - rx) <= 1.2 && Math.abs(my - ry) <= 1.2);
+            expect(hit, `岩石 (${tx},${ty}) 缺少旋转 ${k * 120}° 的对应岩石`).toBe(true);
+          }
+        }
       });
 
       it('矿点不越界、不压在岩石上', () => {

@@ -43,11 +43,13 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   base.addColorStop(1, '#091320');
   g.fillStyle = base;
   g.fillRect(0, 0, MAP_W, MAP_H);
-  // 半场淡染色
-  g.fillStyle = 'rgba(251,113,133,0.035)';
-  g.fillRect(0, 0, MAP_W, MAP_H / 2);
-  g.fillStyle = 'rgba(34,211,238,0.035)';
-  g.fillRect(0, MAP_H / 2, MAP_W, MAP_H / 2);
+  // 半场淡染色（只属于 1v1 的上下对峙；三方是等距三角，没有"前线"概念）
+  if (map.players === 2) {
+    g.fillStyle = 'rgba(251,113,133,0.035)';
+    g.fillRect(0, 0, MAP_W, MAP_H / 2);
+    g.fillStyle = 'rgba(34,211,238,0.035)';
+    g.fillRect(0, MAP_H / 2, MAP_W, MAP_H / 2);
+  }
 
   // 网格：保留但压到几乎不可见，只作对位参考
   g.strokeStyle = 'rgba(148,163,184,0.035)';
@@ -98,28 +100,44 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
 
-  // ---- 前线：虚线 + 箭头纹 ----
-  g.strokeStyle = C.line;
-  g.lineWidth = 2;
-  g.setLineDash([10, 8]);
-  g.beginPath();
-  g.moveTo(0, MAP_H / 2);
-  g.lineTo(MAP_W, MAP_H / 2);
-  g.stroke();
-  g.setLineDash([]);
-  g.fillStyle = 'rgba(245,158,11,0.4)';
-  for (let x = 26; x < MAP_W; x += 64) {
+  // ---- 前线（1v1）：虚线 + 箭头纹；三方图改为标出三方等距的必争质心 ----
+  if (map.players === 2) {
+    g.strokeStyle = C.line;
+    g.lineWidth = 2;
+    g.setLineDash([10, 8]);
     g.beginPath();
-    g.moveTo(x, MAP_H / 2 - 5);
-    g.lineTo(x + 7, MAP_H / 2);
-    g.lineTo(x, MAP_H / 2 + 5);
-    g.closePath();
-    g.fill();
+    g.moveTo(0, MAP_H / 2);
+    g.lineTo(MAP_W, MAP_H / 2);
+    g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = 'rgba(245,158,11,0.4)';
+    for (let x = 26; x < MAP_W; x += 64) {
+      g.beginPath();
+      g.moveTo(x, MAP_H / 2 - 5);
+      g.lineTo(x + 7, MAP_H / 2);
+      g.lineTo(x, MAP_H / 2 + 5);
+      g.closePath();
+      g.fill();
+    }
+    g.fillStyle = 'rgba(245,158,11,0.55)';
+    g.font = '600 13px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
+  } else {
+    const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
+    const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+    g.strokeStyle = C.line;
+    g.lineWidth = 2;
+    g.setLineDash([7, 7]);
+    g.beginPath();
+    g.arc(tcx, tcy, 34, 0, Math.PI * 2);
+    g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = 'rgba(245,158,11,0.55)';
+    g.font = '600 12px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('必 争 之 地', tcx, tcy - 44);
   }
-  g.fillStyle = 'rgba(245,158,11,0.55)';
-  g.font = '600 13px sans-serif';
-  g.textAlign = 'center';
-  g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
 
   // ---- 岩石：不规则多面体（投影 + 亮面 + 裂纹），两种变体避免明显平铺 ----
   for (const [cx, cy] of map.rocks) {

@@ -102,14 +102,13 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     popUsed: new Array(players).fill(0),
     income: new Array(players).fill(0),
     queue: Array.from({ length: players }, () => [] as UnitType[]),
-    // 默认集结点：按出生位置推导 —— 南侧（纵深最深）出生点前压 560，其余出生点贴基地 180。
-    // 这是「位置规则」而非「身份规则」：谁的出生点在南边谁就前压，与"是否玩家"无关。
-    // 保持不对称是 1vN 平衡的关键 —— 让主力在纵深更深的一方半场碰撞，浅方才打不进家。
-    // 若改成对称集结点，碰撞线会整体向深方推移，普通档胜率会从 ~80% 塌到 0。
+    // 默认集结点：按出生位置推导。1v1 是「位置规则」—— 南侧（纵深最深）出生点前压 560，
+    // 北侧贴基地 180，让主力在深方半场碰撞（对称集结点会把碰撞线推向玩家，普通档会从 ~80% 塌到 0）。
+    // 三方是等边三角、三方完全等价，集结距离也必须一致（240），任何偏向都会破坏公平。
     rally: map.spawns.map((s, i) => {
       const dx = midX - s.pos.x, dy = midY - s.pos.y;
       const len = Math.hypot(dx, dy) || 1;
-      const off = i === 0 ? 560 : 180;
+      const off = players === 3 ? 240 : (i === 0 ? 560 : 180);
       return { x: s.pos.x + (dx / len) * off, y: s.pos.y + (dy / len) * off };
     }),
     blocked,
@@ -187,6 +186,41 @@ export function canPlace(w: World, side: Side, type: BuildingType, x: number, y:
     return placeAt(w, side, n.x, n.y, true);
   }
   return placeAt(w, side, x, y, false);
+}
+
+/**
+ * 以主基地为原点取建筑位。偏移量定义在「+y 指向地图质心」的坐标系里，
+ * 先按本方基地相对质心的方位旋转到实际朝向，再依次尝试镜像 / 缩放变体，
+ * 返回第一个能放的点；都放不下返回 null。
+ *
+ * 1v1 两基地与质心共线，旋转角恰为 0，行为与旧的写死坐标完全一致；
+ * 三方是等边三角，各基地朝向差 120°，靠旋转让每个 AI 的家都"面朝质心"布置。
+ */
+export function findBuildSlot(w: World, side: Side, type: BuildingType, offsets: [number, number][]): Vec | null {
+  const hq = w.buildings.find(b => b.side === side && b.type === 'hq' && !b.dead);
+  if (!hq) return null;
+  const map = MAPS[w.map];
+  const cx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
+  const cy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+  const ang = Math.atan2(cy - hq.y, cx - hq.x) - Math.PI / 2;
+  const cos = Math.cos(ang), sin = Math.sin(ang);
+  const cands: Vec[] = [];
+  // 候选顺序：先按声明顺序试完所有主位（与旧的逐偏移取位完全一致），
+  // 主位全满才退到镜像 / 缩放变体 —— 否则会悄悄改变已有地图的 AI 行为。
+  const add = (k: number, mirrored: boolean): void => {
+    for (const [ox, oy] of offsets) {
+      const mirrors: (readonly [number, number])[] = mirrored ? [[-1, 1], [1, -1], [-1, -1]] : [[1, 1]];
+      for (const [sx, sy] of mirrors) {
+        const dx = ox * sx * k, dy = oy * sy * k;
+        cands.push({ x: hq.x + dx * cos - dy * sin, y: hq.y + dx * sin + dy * cos });
+      }
+    }
+  };
+  add(1, false);
+  add(1, true);
+  add(0.6, false);
+  add(0.6, true);
+  return cands.find(c => canPlace(w, side, type, c.x, c.y).ok) ?? null;
 }
 
 function placeAt(w: World, side: Side, x: number, y: number, isMine: boolean): PlaceResult {
@@ -559,7 +593,7 @@ function updateEconomy(w: World, dt: number): void {
   // 难度倍率只作用于 AI（1 号及之后），玩家恒为 1.0。
   // 三方混战里两个 AI 会互相消耗、且都不优先打玩家，导致 1v2 反而比 1v1 轻松，
   // 所以 3 人局给 AI 额外加乘，让"被两方夹击"的压迫感成立。
-  const aiScale = w.players === 3 ? 1.32 : 1;
+  const aiScale = w.players === 3 ? 0.7 : 1;
   for (let s = 1; s < w.players; s++) inc[s] *= DIFFICULTY[w.difficulty].incomeMult * aiScale;
   w.income = inc;
   for (let s = 0; s < w.players; s++) {

@@ -57,12 +57,21 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   g.stroke();
   g.globalAlpha = 1;
 
-  // 前线
+  // 1v1 画前线；三方图标出等距质心
+  const map = currentMap();
   g.strokeStyle = 'rgba(245,158,11,0.5)';
-  g.beginPath();
-  g.moveTo(r.x + 2, r.y + (MAP_H / 2) * sy);
-  g.lineTo(r.x + r.w - 2, r.y + (MAP_H / 2) * sy);
-  g.stroke();
+  if (map.players === 2) {
+    g.beginPath();
+    g.moveTo(r.x + 2, r.y + (MAP_H / 2) * sy);
+    g.lineTo(r.x + r.w - 2, r.y + (MAP_H / 2) * sy);
+    g.stroke();
+  } else {
+    const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
+    const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+    g.beginPath();
+    g.arc(r.x + tcx * sx, r.y + tcy * sy, 3, 0, Math.PI * 2);
+    g.stroke();
+  }
 
   // 岩石地形：雷达上能看出"哪里绕得过去"
   g.fillStyle = 'rgba(58,82,114,0.95)';

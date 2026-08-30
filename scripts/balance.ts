@@ -10,7 +10,7 @@
  * 就能判断数值改动是变好还是变坏。
  */
 import { BUILDING_DEFS, DIFFICULTY, MAPS, UNIT_DEFS } from '../src/core/config';
-import { canPlace, createWorld, issueCommand, stepWorld } from '../src/core/sim';
+import { findBuildSlot, createWorld, issueCommand, stepWorld } from '../src/core/sim';
 import type { Difficulty, UnitType, World } from '../src/core/types';
 
 const STEP = 1 / 60;
@@ -28,9 +28,12 @@ if (process.env.ZW_NO_COUNTER === '1') {
   for (const t of Object.keys(UNIT_DEFS) as UnitType[]) delete UNIT_DEFS[t].dmgBonus;
 }
 
-/** 脚本玩家的建造位（己方半场内，避开矿点） */
-const P_BARRACKS: [number, number][] = [[200, 1500], [520, 1500], [200, 1380]];
-const P_TOWERS: [number, number][] = [[280, 1300], [440, 1300]];
+/**
+ * 脚本玩家的建造位：与 AI 同一套「+y 指向质心」的偏移坐标系（由 findBuildSlot 旋转）。
+ * 1v1 里玩家基地在正南方、质心在正上方，旋转 180° 后与旧写死坐标完全一致。
+ */
+const P_BARRACKS: [number, number][] = [[160, 140], [-160, 140], [160, 260]];
+const P_TOWERS: [number, number][] = [[80, 340], [-80, 340]];
 const P_MAX_MINES = 6;
 const P_WAVE_POP = 18;
 
@@ -46,9 +49,9 @@ function playerThink(w: World): void {
   const towers = myB.filter(b => b.type === 'tower');
   const free = w.nodes.filter(n => n.mineId === null);
 
-  // 经济：铺矿（先自家后中路）
+  // 经济：铺矿（先自家附近，后全场争夺）
   if (mines.length < P_MAX_MINES && free.length && w.crystals[side] >= BUILDING_DEFS.mine.cost) {
-    let pool = free.filter(n => n.y > 1300);
+    let pool = free.filter(n => Math.hypot(n.x - hq.x, n.y - hq.y) < 500);
     if (!pool.length || mines.length >= 2) pool = free;
     let best = pool[0], bd = Infinity;
     for (const n of pool) {
@@ -58,14 +61,14 @@ function playerThink(w: World): void {
     issueCommand(w, { type: 'build', side, building: 'mine', x: best.x, y: best.y });
   }
 
-  // 兵营 / 箭塔
+  // 兵营 / 箭塔（与 AI 同一套取位逻辑，按质心方位旋转）
   if (barracksAll.length < 2 && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && mines.length >= 1) {
-    const slot = P_BARRACKS.find(s => canPlace(w, side, 'barracks', s[0], s[1]).ok);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot[0], y: slot[1] });
+    const slot = findBuildSlot(w, side, 'barracks', P_BARRACKS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot.x, y: slot.y });
   }
   if (towers.length < 1 && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140 && mines.length >= 2) {
-    const slot = P_TOWERS.find(s => canPlace(w, side, 'tower', s[0], s[1]).ok);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot[0], y: slot[1] });
+    const slot = findBuildSlot(w, side, 'tower', P_TOWERS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot.x, y: slot.y });
   }
 
   // 造兵：按固定配比，钱够就排队

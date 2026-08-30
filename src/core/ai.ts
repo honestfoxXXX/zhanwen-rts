@@ -1,5 +1,5 @@
 import { BUILDING_DEFS, DIFFICULTY, MAP_H, UNIT_DEFS } from './config';
-import { canPlace, issueCommand, pushEvent } from './sim';
+import { canPlace, findBuildSlot, issueCommand, pushEvent } from './sim';
 import { rngNext } from './rng';
 import type { Building, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
 
@@ -7,7 +7,8 @@ type DifficultyDef = (typeof DIFFICULTY)[World['difficulty']];
 
 /**
  * 建筑位用相对主基地的偏移表示，而不是写死坐标 ——
- * 三方混战里两个 AI 的基地分别在左上 / 右上角，写死坐标会直接落到别人的建造区里。
+ * 偏移定义在「+y 指向地图质心」的坐标系里，由 findBuildSlot 按本方基地的方位旋转。
+ * 三方等边三角布局下各基地朝向差 120°，每个 AI 的家都能面朝质心布置。
  */
 const BARRACK_OFFSETS: [number, number][] = [[-80, 40], [80, 40], [-80, -60], [80, -60]];
 const TOWER_OFFSETS: [number, number][] = [[-40, 80], [40, 80], [0, -90]];
@@ -132,7 +133,7 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
   // 三方局里两个 AI 互相消耗、都未必优先打玩家，需要更高上限才能形成真正的夹击压力
-  const scale = w.players === 3 ? 1.45 : 1;
+  const scale = w.players === 3 ? 0.75 : 1;
   const maxMines = Math.round(d.maxMines * scale);
   const maxBarracks = Math.round(d.maxBarracks * scale);
   const maxTowers = Math.round(d.maxTowers * scale);
@@ -167,20 +168,16 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     if (n) issueCommand(w, { type: 'build', side, building: 'mine', x: n.x, y: n.y });
   }
 
-  // —— 兵营（相对主基地取位）
+  // —— 兵营（相对主基地取位，按质心方位旋转）
   if (barracksAll.length < maxBarracks && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && (mines.length >= 2 || w.crystals[side] >= 320)) {
-    const slot = BARRACK_OFFSETS
-      .map(([dx, dy]) => [hq.x + dx, hq.y + dy] as const)
-      .find(s => canPlace(w, side, 'barracks', s[0], s[1]).ok);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot[0], y: slot[1] });
+    const slot = findBuildSlot(w, side, 'barracks', BARRACK_OFFSETS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot.x, y: slot.y });
   }
 
   // —— 箭塔
   if (towers.length < maxTowers && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140) {
-    const slot = TOWER_OFFSETS
-      .map(([dx, dy]) => [hq.x + dx, hq.y + dy] as const)
-      .find(s => canPlace(w, side, 'tower', s[0], s[1]).ok);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot[0], y: slot[1] });
+    const slot = findBuildSlot(w, side, 'tower', TOWER_OFFSETS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot.x, y: slot.y });
   }
 
   // —— 造兵（被压着打时排队更深，靠产能而非操作扳回来）
