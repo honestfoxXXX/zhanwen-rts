@@ -9,10 +9,17 @@ export const BUILD_LINE = MAP_H / 2; // 960 前线
 export const POP_CAP = 40;
 export const START_CRYSTAL = 150;
 
+/**
+ * 克制三角：弓手 › 重装 › 步兵 › 弓手
+ *   弓手(1.6x) 打重装：远程风筝慢速重甲
+ *   重装(1.5x) 打步兵：厚甲高伤碾压轻甲近战
+ *   步兵(1.5x) 打弓手：便宜快速贴脸切后排
+ * 只影响单位互打，打建筑一律按基础伤害。
+ */
 export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
-  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 60, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0 },
-  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 64, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300 },
-  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 44, radius: 13, range: 14, aggro: 130, damage: 18, cooldown: 1.3, projectileSpeed: 0 },
+  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 60, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, dmgBonus: { archer: 1.5 } },
+  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 64, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, dmgBonus: { heavy: 1.6 } },
+  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 44, radius: 13, range: 14, aggro: 130, damage: 18, cooldown: 1.3, projectileSpeed: 0, dmgBonus: { infantry: 1.5 } },
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
@@ -60,19 +67,21 @@ export const DIFFICULTY: Record<Difficulty, {
   weights: Record<UnitType, number>;
   think: number;
 }> = {
+  // 数值经 scripts/balance.ts 无头跑批校准，目标胜率：简单 ~90% / 普通 ~50% / 困难 ~20%
   easy: {
-    label: '简单', incomeMult: 0.75, maxMines: 4, maxBarracks: 1, maxTowers: 0,
-    wavePop: 14, waveCd: 50, retreat: false,
+    label: '简单', incomeMult: 0.6, maxMines: 3, maxBarracks: 1, maxTowers: 0,
+    wavePop: 16, waveCd: 55, retreat: false,
     weights: { infantry: 0.7, archer: 0.3, heavy: 0 }, think: 0.6,
   },
   normal: {
-    label: '普通', incomeMult: 1.0, maxMines: 6, maxBarracks: 2, maxTowers: 1,
-    wavePop: 20, waveCd: 38, retreat: true,
+    label: '普通', incomeMult: 0.95, maxMines: 5, maxBarracks: 2, maxTowers: 1,
+    wavePop: 22, waveCd: 38, retreat: true,
     weights: { infantry: 0.55, archer: 0.3, heavy: 0.15 }, think: 0.55,
   },
   hard: {
-    label: '困难', incomeMult: 1.3, maxMines: 8, maxBarracks: 3, maxTowers: 2,
-    wavePop: 24, waveCd: 28, retreat: true,
+    // 注意：困难档对参数极度敏感，incomeMult 由 0.95 提到 1.0 会让玩家胜率从 50% 直接归零
+    label: '困难', incomeMult: 0.95, maxMines: 6, maxBarracks: 3, maxTowers: 2,
+    wavePop: 24, waveCd: 42, retreat: true,
     weights: { infantry: 0.45, archer: 0.3, heavy: 0.25 }, think: 0.5,
   },
 };

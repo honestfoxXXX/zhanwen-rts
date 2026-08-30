@@ -29,7 +29,9 @@ export function nearestFreeTile(blocked: Uint8Array, cx: number, cy: number): [n
 
 /** 两点连线是否无阻挡（步进采样） */
 export function lineClear(blocked: Uint8Array, x0: number, y0: number, x1: number, y1: number): boolean {
-  const d = Math.hypot(x1 - x0, y1 - y0);
+  // 显式 sqrt 而非 Math.hypot：保证跨 JS 引擎结果一致（联机 lockstep 的前提）
+  const dx = x1 - x0, dy = y1 - y0;
+  const d = Math.sqrt(dx * dx + dy * dy);
   const steps = Math.max(1, Math.ceil(d / 14));
   for (let i = 0; i <= steps; i++) {
     const x = x0 + (x1 - x0) * i / steps;

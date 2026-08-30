@@ -4,6 +4,7 @@ import {
 import type { Building, Unit, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
+import { drawUnitBody } from './shapes';
 
 const SIDE = ['#22d3ee', '#fb7185'];
 const SIDE_DIM = ['rgba(34,211,238,0.14)', 'rgba(251,113,133,0.14)'];
@@ -236,8 +237,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.setLineDash([6, 4]);
     ctx.lineDashOffset = -w.time * 16;
     for (const id of ui.selection) {
-      const u = w.units.find(v => v.id === id);
-      if (!u) continue;
+      const u = w.index.get(id) as Unit | undefined; // 走索引，避免每帧线性查找
+      if (!u || u.dead) continue;
       const r = UNIT_DEFS[u.type].radius;
       ctx.beginPath();
       ctx.ellipse(u.x, u.y + 3, r + 5, r + 3, 0, 0, Math.PI * 2);
@@ -251,8 +252,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   for (const b of buildings) drawBuilding(ctx, b, w.time);
 
   // 单位（按 y 排序）
+  const sel = new Set(ui.selection);
   const units = [...w.units].sort((a, b) => a.y - b.y);
-  for (const u of units) drawUnit(ctx, u, w.time);
+  for (const u of units) drawUnit(ctx, u, w.time, sel.has(u.id));
 
   // 弹道：箭矢 / 炮弹
   for (const p of w.projectiles) {
@@ -368,63 +370,21 @@ function hpBar(ctx: CanvasRenderingContext2D, x: number, y: number, width: numbe
   ctx.fillRect(x - width / 2, y, width * k, h);
 }
 
-function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number): void {
+function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected = false): void {
   const def = UNIT_DEFS[u.type];
   const r = def.radius;
-  const bob = Math.sin(time * 9 + u.id * 1.7) * 1.3;
   const justFired = u.cd > def.cooldown - 0.12;
   const recoilX = justFired ? -Math.cos(u.facing) * 2 : 0;
   const recoilY = justFired ? -Math.sin(u.facing) * 2 : 0;
   ctx.save();
-  ctx.translate(u.x, u.y);
-  // 阴影
-  ctx.fillStyle = 'rgba(0,0,0,0.32)';
-  ctx.beginPath();
-  ctx.ellipse(0, r * 0.7, r * 0.9, r * 0.4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.translate(recoilX, recoilY + bob);
-  // 身体
-  ctx.fillStyle = SIDE[u.side];
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = SIDE_DARK[u.side];
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.rotate(u.facing);
-  if (u.type === 'heavy') {
-    // 履带
-    ctx.strokeStyle = SIDE_DARK[u.side];
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.2, -r * 0.85);
-    ctx.lineTo(r * 0.5, -r * 0.85);
-    ctx.moveTo(-r * 0.2, r * 0.85);
-    ctx.lineTo(r * 0.5, r * 0.85);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (u.type === 'archer') {
-    // 弓
-    ctx.beginPath();
-    ctx.arc(r * 0.55, 0, r * 0.6, -1.1, 1.1);
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = SIDE_DARK[u.side];
-    ctx.beginPath();
-    ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // 朝向
-  ctx.strokeStyle = SIDE_DARK[u.side];
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(r * 0.3, 0);
-  ctx.lineTo(r + 3.5, 0);
-  ctx.stroke();
+  ctx.translate(u.x + recoilX, u.y + recoilY);
+  // 轮廓形状 + 徽记统一由 shapes.ts 提供：步兵=圆形 / 弓手=箭头 / 重装=六边形
+  drawUnitBody(ctx, u.type, u.side, r, u.facing, {
+    moving: u.path.length > 0, t: time, phase: u.id * 1.7,
+  });
   ctx.restore();
-  if (u.hp < u.maxHp) hpBar(ctx, u.x, u.y - r - 8, r * 2, u.hp, u.maxHp);
+  // 选中的部队常驻血条，方便在混战里掌握残血单位
+  if (selected || u.hp < u.maxHp) hpBar(ctx, u.x, u.y - r - 8, r * 2, u.hp, u.maxHp);
 }
 
 function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number): void {
@@ -506,11 +466,14 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
         ctx.translate(0, -3);
         ctx.shadowColor = 'rgba(192,132,252,0.6)';
         ctx.shadowBlur = 8;
-        diamond(ctx, 0, 0, 12);
-        ctx.fill();
+        // 三根晶柱：此前与主基地一样是单个大菱形，远距离几乎分不出来
+        for (const [cx, cy, r] of [[0, -2, 13], [-10, 5, 9], [10, 5, 9]] as const) {
+          diamond(ctx, cx, cy, r);
+          ctx.fill();
+        }
         ctx.shadowBlur = 0;
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        diamond(ctx, -1, -2.5, 6);
+        diamond(ctx, -1, -5, 5);
         ctx.fill();
         // 闪光
         ctx.save();

@@ -25,10 +25,31 @@ export function entRadius(e: Unit | Building): number {
   return isUnit(e) ? UNIT_DEFS[e.type].radius : e.half * 0.9;
 }
 
+/**
+ * 两点距离。显式 sqrt 而不用 Math.hypot：
+ * hypot 的实现跨 JS 引擎（V8 / JSC / SpiderMonkey）不保证位精确，
+ * 一个 ULP 的差异就会翻转索敌比较，进而在联机 lockstep 下造成不同步。
+ * Math.sqrt / 四则运算是 IEEE754 精确定义的，可保证跨端一致。
+ */
+function dist(ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax, dy = by - ay;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 export function entityById(w: World, id: number): Unit | Building | null {
-  for (const u of w.units) if (u.id === id) return u;
-  for (const b of w.buildings) if (b.id === id) return b;
+  const hit = w.index.get(id);
+  if (hit) return hit;
+  // 索引未覆盖时（例如测试中手工构造的实体）回退线性扫描并回填
+  for (const u of w.units) if (u.id === id) { w.index.set(id, u); return u; }
+  for (const b of w.buildings) if (b.id === id) { w.index.set(id, b); return b; }
   return null;
+}
+
+/** 取本方存活单位（优先走索引） */
+function unitOf(w: World, id: number, side: Side): Unit | null {
+  const e = w.index.get(id);
+  if (e && isUnit(e) && !e.dead && e.side === side) return e;
+  return w.units.find(v => v.id === id && v.side === side && !v.dead) ?? null;
 }
 
 function ev(w: World, e: SimEvent): void {
@@ -76,11 +97,17 @@ export function createWorld(difficulty: World['difficulty'], seed: number): Worl
       { x: 320, y: 480 },
     ],
     blocked,
+    index: new Map(),
     nextId: 1,
     events: [],
     gameOver: null,
     stats: { kills: [0, 0] },
-    ai: { thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0 },
+    ai: {
+      thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0,
+      scout: { infantry: 0, archer: 0, heavy: 0 },
+      goal: null,
+      waves: 0,
+    },
   };
 
   mkBuilding(w, 0, 'hq', HQ_POS[0].x, HQ_POS[0].y, true);
@@ -99,9 +126,11 @@ function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: numb
     cd: 0,
     facing: side === 0 ? -Math.PI / 2 : Math.PI / 2,
     trainType: null, trainT: 0,
+    rally: null,
     dead: false,
   };
   w.buildings.push(b);
+  w.index.set(b.id, b);
   setBuildingTiles(w, b, 1);
   return b;
 }
@@ -123,7 +152,7 @@ export function nearestFreeNode(w: World, x: number, y: number, r: number) {
   let bd = Infinity;
   for (const n of w.nodes) {
     if (n.mineId !== null) continue;
-    const d = Math.hypot(n.x - x, n.y - y);
+    const d = dist(n.x, n.y, x, y);
     if (d <= r && d < bd) { bd = d; best = n; }
   }
   return best;
@@ -179,7 +208,7 @@ export function issueCommand(w: World, c: Command): boolean {
     case 'move': {
       let any = false;
       for (const id of c.ids) {
-        const u = w.units.find(v => v.id === id && v.side === c.side && !v.dead);
+        const u = unitOf(w, id, c.side);
         if (!u) continue;
         setMoveOrder(w, u, c.x, c.y);
         any = true;
@@ -192,12 +221,41 @@ export function issueCommand(w: World, c: Command): boolean {
       if (!t || t.dead || t.side === c.side) return false;
       let any = false;
       for (const id of c.ids) {
-        const u = w.units.find(v => v.id === id && v.side === c.side && !v.dead);
+        const u = unitOf(w, id, c.side);
         if (!u) continue;
         u.order = { kind: 'attack', targetId: c.targetId };
         u.engageId = c.targetId;
         u.path = [];
         u.pathI = 0;
+        any = true;
+      }
+      return any;
+    }
+    case 'hold': {
+      let any = false;
+      for (const id of c.ids) {
+        const u = unitOf(w, id, c.side);
+        if (!u) continue;
+        u.order = { kind: 'hold' }; // 只打射程内目标，不脱战追击
+        u.path = [];
+        u.pathI = 0;
+        any = true;
+      }
+      return any;
+    }
+    case 'retreat': {
+      const hq = HQ_POS[c.side];
+      let any = false;
+      for (const id of c.ids) {
+        const u = unitOf(w, id, c.side);
+        if (!u) continue;
+        u.order = { kind: 'retreat' };
+        u.engageId = null;
+        const p = findPath(w.blocked, u.x, u.y, hq.x, hq.y);
+        u.path = p ?? [];
+        u.pathI = 0;
+        u.repathT = 0.4;
+        u.stuckT = 0;
         any = true;
       }
       return any;
@@ -229,6 +287,12 @@ export function issueCommand(w: World, c: Command): boolean {
       return true;
     }
     case 'rally': {
+      if (c.buildingId !== undefined) {
+        const b = w.buildings.find(v => v.id === c.buildingId && v.side === c.side && !v.dead);
+        if (!b) return false;
+        b.rally = { x: c.x, y: c.y };
+        return true;
+      }
       w.rally[c.side] = { x: c.x, y: c.y };
       return true;
     }
@@ -252,13 +316,13 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
   let bs = Infinity;
   for (const e of w.units) {
     if (e.dead || e.side === u.side) continue;
-    const d = Math.hypot(e.x - u.x, e.y - u.y) - UNIT_DEFS[e.type].radius - UNIT_DEFS[u.type].radius;
+    const d = dist(e.x, e.y, u.x, u.y) - UNIT_DEFS[e.type].radius - UNIT_DEFS[u.type].radius;
     if (d <= aggro && d < bs) { bs = d; best = e; }
   }
   if (!best) {
     for (const b of w.buildings) {
       if (b.dead || b.side === u.side) continue;
-      const d = Math.hypot(b.x - u.x, b.y - u.y) - b.half * 0.9 - UNIT_DEFS[u.type].radius;
+      const d = dist(b.x, b.y, u.x, u.y) - b.half * 0.9 - UNIT_DEFS[u.type].radius;
       if (d <= aggro && d < bs) { bs = d; best = b; }
     }
   }
@@ -266,11 +330,18 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
 }
 
 function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
-  const died = applyDamage(w, t, def.damage, u.side);
-  void died;
-  ev(w, { type: 'shot', x: u.x, y: u.y, tx: t.x, ty: t.y, side: u.side, big: u.type === 'heavy' });
+  let dmg = def.damage;
+  if (def.dmgBonus && isUnit(t)) {
+    const bonus = def.dmgBonus[t.type];
+    if (bonus) dmg *= bonus;
+  }
+  applyDamage(w, t, dmg, u.side);
+  ev(w, {
+    type: 'shot', x: u.x, y: u.y, tx: t.x, ty: t.y,
+    side: u.side, big: u.type === 'heavy', targetBuilding: !isUnit(t),
+  });
   if (def.projectileSpeed > 0) {
-    const d = Math.hypot(t.x - u.x, t.y - u.y);
+    const d = dist(u.x, u.y, t.x, t.y);
     w.projectiles.push({
       x: u.x, y: u.y, sx: u.x, sy: u.y, tx: t.x, ty: t.y,
       t: 0, dur: Math.max(0.06, d / def.projectileSpeed),
@@ -281,7 +352,7 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
 
 function stepToward(u: Unit, tx: number, ty: number, speed: number, dt: number): boolean {
   const dx = tx - u.x, dy = ty - u.y;
-  const d = Math.hypot(dx, dy);
+  const d = Math.sqrt(dx * dx + dy * dy);
   if (d < 2) return true;
   const step = Math.min(speed * dt, d);
   u.x += dx / d * step;
@@ -291,15 +362,17 @@ function stepToward(u: Unit, tx: number, ty: number, speed: number, dt: number):
 }
 
 function followPath(w: World, u: Unit, dt: number, def: (typeof UNIT_DEFS)[UnitType]): void {
+  // 撤退令抵达主基地后同样转为待命
+  const arrived = (): boolean => u.order.kind === 'move' || u.order.kind === 'retreat';
   if (u.pathI >= u.path.length) {
-    if (u.order.kind === 'move') u.order = { kind: 'idle' };
+    if (arrived()) u.order = { kind: 'idle' };
     u.path = [];
     return;
   }
   const wp = u.path[u.pathI];
   if (stepToward(u, wp.x, wp.y, def.speed, dt)) {
     u.pathI++;
-    if (u.pathI >= u.path.length && u.order.kind === 'move') u.order = { kind: 'idle' };
+    if (u.pathI >= u.path.length && arrived()) u.order = { kind: 'idle' };
   }
   void w;
 }
@@ -333,7 +406,8 @@ function updateUnit(w: World, u: Unit, dt: number): void {
     if (!ot || ot.dead) { u.order = { kind: 'idle' }; u.engageId = null; tgt = null; }
     else { u.engageId = ot.id; tgt = ot; }
   }
-  if (!tgt && (u.order.kind === 'idle' || u.order.kind === 'move')) {
+  // 固守/撤退中的部队也会自动迎战，只有明确的移动令才保持"只打挡路的"
+  if (!tgt && u.order.kind !== 'attack') {
     const a = acquireTarget(w, u, def.aggro);
     if (a) { u.engageId = a.id; tgt = a; }
   }
@@ -341,8 +415,9 @@ function updateUnit(w: World, u: Unit, dt: number): void {
   let triedMove = false;
   if (tgt) {
     const tr = entRadius(tgt);
-    const d = Math.hypot(tgt.x - u.x, tgt.y - u.y) - def.radius - tr;
-    const leash = u.order.kind === 'attack' ? Infinity : def.aggro + 70;
+    const d = dist(tgt.x, tgt.y, u.x, u.y) - def.radius - tr;
+    // hold：只打已进射程的目标，绝不脱战追击（leash 归零）
+    const leash = u.order.kind === 'attack' ? Infinity : u.order.kind === 'hold' ? 0 : def.aggro + 70;
     if (d <= def.range) {
       u.facing = Math.atan2(tgt.y - u.y, tgt.x - u.x);
       if (u.cd <= 0) { fireAt(w, u, tgt, def); u.cd = def.cooldown; }
@@ -357,26 +432,33 @@ function updateUnit(w: World, u: Unit, dt: number): void {
       tgt = null;
     }
   }
-  if (!triedMove && u.order.kind === 'move' && u.path.length) followPath(w, u, dt, def);
+  const marching = u.order.kind === 'move' || u.order.kind === 'retreat';
+  if (!triedMove && marching && u.path.length) followPath(w, u, dt, def);
 
-  // 自愈：追击清空路径后目标消失，重新向目的地寻路
-  if (u.order.kind === 'move' && u.path.length === 0) {
+  // 自愈：追击清空路径后目标消失，重新向目的地寻路（撤退令的目的地固定为主基地）
+  if (marching && u.path.length === 0) {
     u.repathT -= dt;
     if (u.repathT <= 0) {
-      const p = findPath(w.blocked, u.x, u.y, u.order.x, u.order.y);
+      const ord = u.order; // 取局部快照，让 TS 能稳定窄化（u.order 在本函数内被改写过）
+      const dx = ord.kind === 'retreat' ? HQ_POS[u.side].x : ord.kind === 'move' ? ord.x : u.x;
+      const dy = ord.kind === 'retreat' ? HQ_POS[u.side].y : ord.kind === 'move' ? ord.y : u.y;
+      const p = findPath(w.blocked, u.x, u.y, dx, dy);
       if (p) { u.path = p; u.pathI = 0; }
       else u.order = { kind: 'idle' };
       u.repathT = 0.8;
     }
   }
 
-  const moving = triedMove || (u.order.kind === 'move' && u.path.length > 0);
+  const moving = triedMove || (marching && u.path.length > 0);
   if (moving) {
     u.stuckT += dt;
     if (u.stuckT >= 0.6) {
-      const moved = Math.hypot(u.x - u.lastX, u.y - u.lastY);
+      const moved = dist(u.x, u.y, u.lastX, u.lastY);
       if (moved < 5) {
-        const dest = tgt ? { x: tgt.x, y: tgt.y } : u.order.kind === 'move' ? { x: u.order.x, y: u.order.y } : null;
+        let dest: Vec | null = null;
+        if (tgt) dest = { x: tgt.x, y: tgt.y };
+        else if (u.order.kind === 'move') dest = { x: u.order.x, y: u.order.y };
+        else if (u.order.kind === 'retreat') dest = { x: HQ_POS[u.side].x, y: HQ_POS[u.side].y };
         if (dest) {
           const p = findPath(w.blocked, u.x, u.y, dest.x, dest.y);
           if (p) { u.path = p; u.pathI = 0; u.repathT = 0.5; }
@@ -453,7 +535,7 @@ function updateEconomy(w: World, dt: number): void {
 function spawnFrom(w: World, b: Building): void {
   const t = b.trainType as UnitType;
   const d = UNIT_DEFS[t];
-  const rally = w.rally[b.side];
+  const rally = b.rally ?? w.rally[b.side];
   let px = b.x + b.half + d.radius + 4, py = b.y;
   const base = Math.atan2(rally.y - b.y, rally.x - b.x);
   let found = false;
@@ -485,6 +567,7 @@ function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Un
     dead: false,
   };
   w.units.push(u);
+  w.index.set(u.id, u);
   return u;
 }
 
@@ -532,7 +615,7 @@ function updateBuildings(w: World, dt: number): void {
     let bd = Infinity;
     for (const u of w.units) {
       if (u.dead || u.side === b.side) continue;
-      const d = Math.hypot(u.x - b.x, u.y - b.y) - UNIT_DEFS[u.type].radius;
+      const d = dist(u.x, u.y, b.x, b.y) - UNIT_DEFS[u.type].radius;
       if (d <= wpn.range && d < bd) { bd = d; best = u; }
     }
     if (best && b.cd <= 0) {
@@ -557,6 +640,7 @@ function cleanup(w: World): void {
   const deadUnits = w.units.filter(u => u.dead);
   for (const u of deadUnits) {
     deadIds.add(u.id);
+    w.index.delete(u.id);
     ev(w, { type: 'die', x: u.x, y: u.y, r: UNIT_DEFS[u.type].radius, side: u.side });
     w.popUsed[u.side] -= UNIT_DEFS[u.type].pop;
   }
@@ -565,6 +649,7 @@ function cleanup(w: World): void {
   const deadB = w.buildings.filter(b => b.dead);
   for (const b of deadB) {
     deadIds.add(b.id);
+    w.index.delete(b.id);
     ev(w, { type: 'boom', x: b.x, y: b.y, big: b.type === 'hq' });
     setBuildingTiles(w, b, 0);
     if (b.type === 'mine') {
@@ -626,16 +711,75 @@ export function stepWorld(w: World, dt: number): void {
   cleanup(w);
 }
 
+/* ---------------- 状态指纹 / 序列化（联机与测试用） ---------------- */
+
+/**
+ * 世界状态指纹（FNV-1a 变体）。用途：
+ *  - 单元测试：同种子跑两遍必须得到同一个值
+ *  - 联机：每 N 帧比对双方 hash，第一时间发现 desync
+ */
+export function hashWorld(w: World): number {
+  let h = 2166136261 >>> 0;
+  const mix = (n: number): void => {
+    h = (h ^ (n | 0)) >>> 0;
+    h = Math.imul(h, 16777619) >>> 0;
+  };
+  const mixF = (n: number): void => mix(Math.round(n * 1000));
+  mix(w.tick);
+  mixF(w.time);
+  mix(w.rngState);
+  for (const s of [0, 1] as Side[]) { mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]); }
+  for (const u of w.units) {
+    if (u.dead) continue;
+    mix(u.id); mix(u.side); mix(u.type.length); mixF(u.x); mixF(u.y); mixF(u.hp);
+  }
+  for (const b of w.buildings) {
+    if (b.dead) continue;
+    mix(b.id); mix(b.side); mix(b.type.length); mixF(b.hp); mixF(b.buildT);
+    if (b.trainType) mix(b.trainType.length);
+  }
+  mix(w.queue[0].length);
+  mix(w.queue[1].length);
+  return h >>> 0;
+}
+
+/** 序列化整局状态（blocked 转为普通数组，其余均为可 JSON 化的普通对象） */
+export function serializeWorld(w: World): string {
+  return JSON.stringify({
+    v: 1,
+    tick: w.tick, time: w.time, seed: w.seed, rngState: w.rngState, difficulty: w.difficulty,
+    units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
+    crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
+    rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
+    gameOver: w.gameOver, stats: w.stats, ai: w.ai,
+  });
+}
+
+/** 反序列化。索引会依据 units/buildings 重建 */
+export function deserializeWorld(json: string): World {
+  const o = JSON.parse(json) as Omit<World, 'blocked' | 'index'> & { blocked: number[] };
+  const w: World = {
+    ...o,
+    blocked: Uint8Array.from(o.blocked),
+    index: new Map(),
+    events: [],
+  };
+  for (const u of w.units) w.index.set(u.id, u);
+  for (const b of w.buildings) w.index.set(b.id, b);
+  return w;
+}
+
 /* ---------------- 拾取（输入层用） ---------------- */
 
-export function pickUnitAt(w: World, x: number, y: number, side: Side | null): Unit | null {
+/** tol 为额外拾取容差（世界单位）。输入层应按 1/cam.scale 换算，保证屏幕上的触控目标大小恒定 */
+export function pickUnitAt(w: World, x: number, y: number, side: Side | null, tol = 16): Unit | null {
   let best: Unit | null = null;
   let bd = Infinity;
   for (const u of w.units) {
     if (u.dead) continue;
     if (side !== null && u.side !== side) continue;
-    const d = Math.hypot(u.x - x, u.y - y);
-    if (d <= UNIT_DEFS[u.type].radius + 16 && d < bd) { bd = d; best = u; }
+    const d = dist(u.x, u.y, x, y);
+    if (d <= UNIT_DEFS[u.type].radius + tol && d < bd) { bd = d; best = u; }
   }
   return best;
 }

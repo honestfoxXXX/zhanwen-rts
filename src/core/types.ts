@@ -18,6 +18,8 @@ export interface UnitDef {
   damage: number;
   cooldown: number;
   projectileSpeed: number; // >0 远程弹道，0 近战瞬时
+  /** 克制加成：对指定兵种的伤害倍率（只对单位生效，建筑不受影响）。集中在 config.ts 调整 */
+  dmgBonus?: Partial<Record<UnitType, number>>;
 }
 
 export interface WeaponDef { range: number; damage: number; cooldown: number; projectileSpeed: number }
@@ -35,7 +37,9 @@ export interface BuildingDef {
 export type Order =
   | { kind: 'idle' }
   | { kind: 'move'; x: number; y: number }
-  | { kind: 'attack'; targetId: number };
+  | { kind: 'attack'; targetId: number }
+  | { kind: 'hold' }    // 原地固守：只打射程内目标，不脱战追击
+  | { kind: 'retreat' }; // 撤退：返回己方主基地后转为待命
 
 export interface Unit {
   id: number;
@@ -67,6 +71,7 @@ export interface Building {
   facing: number; // 武器朝向（塔/主基地渲染用）
   trainType: UnitType | null;
   trainT: number;
+  rally: Vec | null; // 本兵营独立集结点；null 时回退到 w.rally[side]
   dead: boolean;
 }
 
@@ -90,14 +95,24 @@ export interface SimEvent {
   side?: Side; big?: boolean; r?: number;
   reason?: DenyReason;
   winner?: Side;
+  /** shot 事件附带：被打的是建筑(true)还是部队(false)，用于挨打告警分级 */
+  targetBuilding?: boolean;
 }
 
+type WithTick<T> = T & { tick?: number };
+
+/**
+ * 指令流。tick 由输入层标注（联机 lockstep 下由网络层填执行帧），单机可省略。
+ * 未来只同步指令流即可复现整局，因此所有指令都必须是可序列化的普通对象。
+ */
 export type Command =
-  | { type: 'move'; side: Side; ids: number[]; x: number; y: number }
-  | { type: 'attack'; side: Side; ids: number[]; targetId: number }
-  | { type: 'build'; side: Side; building: BuildingType; x: number; y: number }
-  | { type: 'train'; side: Side; unit: UnitType }
-  | { type: 'rally'; side: Side; x: number; y: number };
+  | WithTick<{ type: 'move'; side: Side; ids: number[]; x: number; y: number }>
+  | WithTick<{ type: 'attack'; side: Side; ids: number[]; targetId: number }>
+  | WithTick<{ type: 'hold'; side: Side; ids: number[] }>
+  | WithTick<{ type: 'retreat'; side: Side; ids: number[] }>
+  | WithTick<{ type: 'build'; side: Side; building: BuildingType; x: number; y: number }>
+  | WithTick<{ type: 'train'; side: Side; unit: UnitType }>
+  | WithTick<{ type: 'rally'; side: Side; x: number; y: number; buildingId?: number }>;
 
 export interface AIState {
   thinkT: number;
@@ -105,6 +120,12 @@ export interface AIState {
   attacking: boolean;
   waveCd: number;
   waveStart: number; // 出击时部队总血量，用于判断溃退
+  /** 侦查到的玩家兵种构成（累计观测量），用于针对性调整出兵配比 */
+  scout: Record<UnitType, number>;
+  /** 当前波次的进攻目标；为空表示尚未确定 */
+  goal: Vec | null;
+  /** 已发起的波次数（从 0 开始），用于隔波切换"打矿场 / 推主基地" */
+  waves: number;
 }
 
 export interface World {
@@ -123,6 +144,8 @@ export interface World {
   queue: UnitType[][]; // 全局造兵队列（每方）
   rally: Vec[];
   blocked: Uint8Array;
+  /** id → 实体索引。避免每帧 O(n) 线性查找；手搓实体（如测试）未入索引时会回退扫描并回填 */
+  index: Map<number, Unit | Building>;
   nextId: number;
   events: SimEvent[];
   gameOver: null | { winner: Side };

@@ -5,7 +5,6 @@ import type { World } from './core/types';
 import { Camera } from './render/camera';
 import { Effects } from './render/effects';
 import { draw, initRenderer } from './render/renderer';
-import * as minimap from './render/minimap';
 import { Input } from './input/input';
 import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
@@ -207,8 +206,7 @@ function renderFrame(): void {
       ? `建造：${BUILDING_DEFS[ui.placing].name}`
       : ui.mode === 'rally' ? '点击地图设置集结点'
         : null; // 框选不占用操作行，避免拖动时底部卡槽闪烁
-    draw(ctx, world, cam, ui, fx);
-    minimap.draw(ctx, world, cam); // 屏幕空间，画在最上层
+    draw(ctx, world, cam, ui, fx); // 内部已在末尾绘制小地图
     hud.update(world, ui, modeLabel);
     rallyBtn.classList.toggle('armed', ui.mode === 'rally');
     for (const [t, btn] of buildBtns) btn.classList.toggle('armed', ui.mode === 'place' && ui.placing === t);
