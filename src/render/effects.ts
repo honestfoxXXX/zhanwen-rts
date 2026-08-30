@@ -1,12 +1,12 @@
 /** 纯视觉层特效（不影响模拟确定性） */
 interface Fx {
-  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash';
+  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash' | 'spark' | 'shock';
   x: number; y: number;
   t: number; dur: number;
   r: number;
   color: string;
   big: boolean;
-  // debris/smoke 粒子参数
+  // debris/smoke/spark 粒子参数
   vx: number; vy: number;
 }
 
@@ -25,12 +25,14 @@ export class Effects {
 
   push(kind: Fx['kind'], x: number, y: number, opts: { r?: number; color?: string; big?: boolean } = {}): void {
     const dur = kind === 'boom' ? 0.55 : kind === 'mark' ? 0.5 : kind === 'ring' ? 0.4
-      : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : kind === 'slash' ? 0.18 : 0.14;
+      : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : kind === 'slash' ? 0.18 : kind === 'shock' ? 0.45 : 0.14;
     this.add({ kind, x, y, dur, r: opts.r ?? 10, color: opts.color ?? '#ffffff', big: opts.big ?? false, vx: 0, vy: 0 });
   }
 
   dieEvent(x: number, y: number, r: number, side: Side, big = false): void {
     this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big, vx: 0, vy: 0 });
+    // 内圈反向收拢，两圈一扩一缩，比单环更有"爆开"的层次
+    this.add({ kind: 'shock', x, y, dur: 0.3, r: r + 10, color: 'rgba(255,255,255,0.9)', big, vx: 0, vy: 0 });
     // 四散碎片：体型大的单位碎得更夸张
     for (let i = 0; i < (big ? 7 : 4); i++) {
       const a = (i / 4) * Math.PI * 2 + 0.6;
@@ -41,6 +43,19 @@ export class Effects {
 
   boomEvent(x: number, y: number, big: boolean): void {
     this.add({ kind: 'boom', x, y, dur: 0.55, r: big ? 60 : 34, color: '#fbbf24', big, vx: 0, vy: 0 });
+    // 冲击波：细环快速外扩，先于火焰到达
+    this.add({ kind: 'shock', x, y, dur: 0.45, r: big ? 26 : 14, color: 'rgba(255,237,180,0.95)', big, vx: 0, vy: 0 });
+    // 飞溅火星：高速小亮点，受重力下坠
+    const n = big ? 8 : 5;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 90 + Math.random() * 120;
+      this.add({
+        kind: 'spark', x, y, dur: 0.3 + Math.random() * 0.2, r: 1.6,
+        color: i % 3 === 0 ? '#fde68a' : '#fbbf24', big: false,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50,
+      });
+    }
     for (let i = 0; i < 3; i++) {
       this.add({
         kind: 'smoke',
@@ -48,6 +63,19 @@ export class Effects {
         dur: 0.9, r: big ? 16 + i * 5 : 9 + i * 3,
         color: 'rgba(148,163,184,0.5)', big,
         vx: (i - 1) * 14, vy: -26 - i * 8,
+      });
+    }
+  }
+
+  /** 弹道命中点的火花：几条放射短线，一闪而过 */
+  spark(x: number, y: number, side: Side): void {
+    for (let i = 0; i < 3; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 50 + Math.random() * 60;
+      this.add({
+        kind: 'spark', x, y, dur: 0.14 + Math.random() * 0.06, r: 1.2,
+        color: i === 0 ? '#fff7d6' : SIDE_COLORS[side], big: false,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
       });
     }
   }
@@ -73,10 +101,11 @@ export class Effects {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const f = this.list[i];
       f.t += dt;
-      if (f.kind === 'debris' || f.kind === 'smoke') {
+      if (f.kind === 'debris' || f.kind === 'smoke' || f.kind === 'spark') {
         f.x += f.vx * dt;
         f.y += f.vy * dt;
-        if (f.kind === 'debris') f.vy += 90 * dt; // 碎片受重力
+        if (f.kind !== 'smoke') f.vy += 220 * dt; // 碎片/火星受重力，烟往上飘
+        if (f.kind === 'spark') { f.vx *= 0.92; f.vy *= 0.92; } // 火星快速减速
       }
       if (f.t >= f.dur) this.list.splice(i, 1);
     }
@@ -163,6 +192,29 @@ export class Effects {
           g.lineWidth = (f.big ? 3.5 : 2.4) * (1 - k * 0.4);
           g.beginPath();
           g.arc(f.x, f.y, f.r, -0.95 + k * 0.7, 0.95 + k * 0.7);
+          g.stroke();
+          break;
+        }
+        case 'shock': {
+          // 冲击波：细环快速外扩、透明度陡降
+          g.globalAlpha = (1 - k) * 0.85;
+          g.strokeStyle = f.color;
+          g.lineWidth = 2.2 * (1 - k) + 0.4;
+          g.beginPath();
+          g.arc(f.x, f.y, f.r + k * (f.big ? 70 : 40), 0, Math.PI * 2);
+          g.stroke();
+          break;
+        }
+        case 'spark': {
+          // 火星：沿速度方向的短亮线，越接近寿命末端越细
+          g.globalAlpha = 1 - k;
+          g.strokeStyle = f.color;
+          g.lineWidth = 1.4 * (1 - k * 0.5);
+          const len = 3.5 + k * 2;
+          const sp = Math.hypot(f.vx, f.vy) || 1;
+          g.beginPath();
+          g.moveTo(f.x - (f.vx / sp) * len, f.y - (f.vy / sp) * len);
+          g.lineTo(f.x, f.y);
           g.stroke();
           break;
         }

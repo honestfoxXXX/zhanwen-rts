@@ -130,8 +130,21 @@ export function drawUnitBody(
   shapePath(g, def.shape, vr);
   g.fillStyle = SIDE_FILL[side];
   g.fill();
+  // 剪影内打光：左上高光 + 右下暗面，让平涂色块有了体积
+  g.save();
+  g.clip();
+  g.fillStyle = 'rgba(255,255,255,0.34)';
+  g.beginPath();
+  g.ellipse(-vr * 0.34, -vr * 0.42, vr * 0.72, vr * 0.55, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(2,6,16,0.22)';
+  g.beginPath();
+  g.ellipse(vr * 0.38, vr * 0.5, vr * 0.8, vr * 0.6, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
   g.strokeStyle = SIDE_DARK[side];
   g.lineWidth = 2;
+  shapePath(g, def.shape, vr);
   g.stroke();
 
   // 朝向指针

@@ -36,41 +36,52 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   c.height = MAP_H;
   const g = c.getContext('2d') as CanvasRenderingContext2D;
 
-  for (let cy = 0; cy < ROWS; cy++) {
-    for (let cx = 0; cx < COLS; cx++) {
-      g.fillStyle = (cx + cy) % 2 === 0 ? C.groundA : C.groundB;
-      g.fillRect(cx * TILE, cy * TILE, TILE, TILE);
-    }
-  }
+  // 基底：垂直光照渐变（北亮南暗）替代棋盘格，棋盘格是"调试感"的最大来源
+  const base = g.createLinearGradient(0, 0, 0, MAP_H);
+  base.addColorStop(0, '#122238');
+  base.addColorStop(0.45, '#0d1a2c');
+  base.addColorStop(1, '#091320');
+  g.fillStyle = base;
+  g.fillRect(0, 0, MAP_W, MAP_H);
   // 半场淡染色
-  g.fillStyle = 'rgba(251,113,133,0.04)';
+  g.fillStyle = 'rgba(251,113,133,0.035)';
   g.fillRect(0, 0, MAP_W, MAP_H / 2);
-  g.fillStyle = 'rgba(34,211,238,0.04)';
+  g.fillStyle = 'rgba(34,211,238,0.035)';
   g.fillRect(0, MAP_H / 2, MAP_W, MAP_H / 2);
 
-  // 网格
-  g.strokeStyle = C.grid;
+  // 网格：保留但压到几乎不可见，只作对位参考
+  g.strokeStyle = 'rgba(148,163,184,0.035)';
   g.lineWidth = 1;
   g.beginPath();
   for (let cx = 0; cx <= COLS; cx++) { g.moveTo(cx * TILE, 0); g.lineTo(cx * TILE, MAP_H); }
   for (let cy = 0; cy <= ROWS; cy++) { g.moveTo(0, cy * TILE); g.lineTo(MAP_W, cy * TILE); }
   g.stroke();
 
-  // ---- 确定性地面装饰（碎石 / 草茎 / 暗斑）----
+  // ---- 确定性地面装饰（大块色斑 / 暗斑 / 苔痕 / 草茎 / 碎石）----
   let seed = 20260830;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  // 大块色斑：两种色相（苔青 / 靛蓝），让地面有"地貌"而非纯色
+  for (let i = 0; i < 34; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 40 + rnd() * 90;
+    g.fillStyle = i % 2 === 0
+      ? `rgba(45,212,191,${0.022 + rnd() * 0.03})`
+      : `rgba(99,132,255,${0.02 + rnd() * 0.028})`;
+    g.beginPath();
+    g.ellipse(x, y, r, r * (0.5 + rnd() * 0.3), rnd() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
   // 暗斑
   for (let i = 0; i < 26; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 26 + rnd() * 52;
-    g.fillStyle = `rgba(2,6,16,${0.05 + rnd() * 0.05})`;
+    g.fillStyle = `rgba(2,6,16,${0.06 + rnd() * 0.06})`;
     g.beginPath();
     g.ellipse(x, y, r, r * 0.6, rnd() * Math.PI, 0, Math.PI * 2);
     g.fill();
   }
   // 草茎
-  g.strokeStyle = 'rgba(94,234,212,0.10)';
+  g.strokeStyle = 'rgba(94,234,212,0.11)';
   g.lineWidth = 1.4;
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 170; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H;
     const lean = (rnd() - 0.5) * 3;
     g.beginPath();
@@ -79,9 +90,9 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.stroke();
   }
   // 碎石点
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 300; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 0.8 + rnd() * 1.6;
-    g.fillStyle = `rgba(148,163,184,${0.05 + rnd() * 0.08})`;
+    g.fillStyle = `rgba(148,163,184,${0.05 + rnd() * 0.09})`;
     g.beginPath();
     g.arc(x, y, r, 0, Math.PI * 2);
     g.fill();
@@ -110,37 +121,88 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   g.textAlign = 'center';
   g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
 
-  // ---- 岩石 ----
+  // ---- 岩石：不规则多面体（投影 + 亮面 + 裂纹），两种变体避免明显平铺 ----
   for (const [cx, cy] of map.rocks) {
     const x = cx * TILE, y = cy * TILE;
-    g.fillStyle = C.rock;
-    roundRect(g, x + 2, y + 2, TILE - 4, TILE - 4, 7);
-    g.fill();
-    g.strokeStyle = C.rockEdge;
-    g.lineWidth = 1.5;
-    roundRect(g, x + 2, y + 2, TILE - 4, TILE - 4, 7);
-    g.stroke();
-    g.fillStyle = 'rgba(148,163,184,0.25)';
+    const v = (cx * 7 + cy * 13) % 2; // 逐格确定性变体
+    // 底部投影
+    g.fillStyle = 'rgba(0,0,0,0.38)';
     g.beginPath();
-    g.arc(x + 13, y + 14, 2.5, 0, Math.PI * 2);
-    g.arc(x + 27, y + 25, 2, 0, Math.PI * 2);
+    g.ellipse(x + TILE / 2, y + TILE - 7, TILE * 0.44, 6.5, 0, 0, Math.PI * 2);
     g.fill();
+    // 主体轮廓
+    g.fillStyle = C.rock;
+    g.beginPath();
+    if (v === 0) {
+      g.moveTo(x + 7, y + TILE - 8);
+      g.lineTo(x + 3, y + 15);
+      g.lineTo(x + 12, y + 4);
+      g.lineTo(x + TILE - 9, y + 3);
+      g.lineTo(x + TILE - 3, y + 17);
+      g.lineTo(x + TILE - 7, y + TILE - 8);
+    } else {
+      g.moveTo(x + 5, y + TILE - 9);
+      g.lineTo(x + 2, y + 18);
+      g.lineTo(x + 14, y + 6);
+      g.lineTo(x + TILE - 7, y + 5);
+      g.lineTo(x + TILE - 2, y + 14);
+      g.lineTo(x + TILE - 9, y + TILE - 6);
+    }
+    g.closePath();
+    g.fill();
+    // 受光面（左上）
+    g.fillStyle = 'rgba(148,180,222,0.20)';
+    g.beginPath();
+    g.moveTo(x + 4, y + 15);
+    g.lineTo(x + 12, y + 5);
+    g.lineTo(x + TILE - 9, y + 4);
+    g.lineTo(x + 17, y + 16);
+    g.closePath();
+    g.fill();
+    // 裂纹
+    g.strokeStyle = 'rgba(6,12,22,0.55)';
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(x + 14, y + 12);
+    g.lineTo(x + 20, y + 22);
+    g.lineTo(x + 16, y + TILE - 12);
+    g.stroke();
   }
 
-  // ---- 基地平台（HQ 底座），按地图出生点绘制 ----
+  // ---- 基地平台（HQ 底座）：阵营色光晕 + 虚线边界，按地图出生点绘制 ----
   for (const [i, sp] of map.spawns.entries()) {
     const p = sp.pos;
+    const glow = g.createRadialGradient(p.x, p.y, 6, p.x, p.y, 104);
+    glow.addColorStop(0, SIDE_DIM[i]);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = glow;
+    g.fillRect(p.x - 104, p.y - 104, 208, 208);
     g.strokeStyle = SIDE_FILL[i];
-    g.globalAlpha = 0.28;
+    g.globalAlpha = 0.3;
     g.lineWidth = 1.5;
     roundRect(g, p.x - 56, p.y - 56, 112, 112, 14);
     g.stroke();
     g.setLineDash([4, 5]);
-    g.globalAlpha = 0.14;
+    g.globalAlpha = 0.15;
     roundRect(g, p.x - 48, p.y - 48, 96, 96, 12);
     g.stroke();
     g.setLineDash([]);
     g.globalAlpha = 1;
+  }
+
+  // ---- 边缘压暗：地图四边一圈渐变，视线自然聚焦战场中部 ----
+  const shade = 60;
+  for (const [x0, y0, x1, y1, w, h, hor] of [
+    [0, 0, 0, shade, MAP_W, 0, true],
+    [0, MAP_H - shade, 0, MAP_H, MAP_W, 0, true],
+    [0, 0, shade, 0, 0, MAP_H, false],
+    [MAP_W - shade, 0, MAP_W, 0, 0, MAP_H, false],
+  ] as [number, number, number, number, number, number, boolean][]) {
+    const gr = g.createLinearGradient(x0, y0, x1, y1);
+    gr.addColorStop(0, 'rgba(3,7,15,0.42)');
+    gr.addColorStop(1, 'rgba(3,7,15,0)');
+    g.fillStyle = gr;
+    g.fillRect(hor ? 0 : Math.min(x0, x1), hor ? Math.min(y0, y1) : 0, hor ? MAP_W : shade, hor ? shade : MAP_H);
   }
   return c;
 }
@@ -155,9 +217,15 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.closePath();
 }
 
+let curMap: MapDef = MAPS[0];
+
 export function initRenderer(map: MapDef = MAPS[0]): void {
+  curMap = map;
   bgCanvas = buildBackground(map);
 }
+
+/** 当前地图（小地图等模块需要静态地形数据时使用） */
+export function currentMap(): MapDef { return curMap; }
 
 export interface RenderUI {
   selection: number[];
@@ -409,6 +477,15 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // 主基地/矿场的地面光晕：远景下也能一眼识别重要建筑
+  if (!constructing && (b.type === 'hq' || b.type === 'mine')) {
+    const gl = ctx.createRadialGradient(0, 2, 4, 0, 2, h + 16);
+    gl.addColorStop(0, SIDE_DIM[b.side]);
+    gl.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gl;
+    ctx.fillRect(-(h + 16), -(h + 14), (h + 16) * 2, (h + 16) * 2 + 8);
+  }
+
   const pulse = 1 + 0.06 * Math.sin(time * 2.5 + b.id);
   if (constructing) {
     // 施工中：脚手架 + 进度条
@@ -462,9 +539,29 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
         diamond(ctx, -2, -3, 6);
         ctx.fill();
         ctx.restore();
+        // 旗帜：远景下辨认阵营归属
+        ctx.strokeStyle = SIDE_DARK[b.side];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(13, 7);
+        ctx.lineTo(13, -21);
+        ctx.stroke();
+        const fw = Math.sin(time * 4.4 + b.id) * 1.6;
+        ctx.fillStyle = SIDE[b.side];
+        ctx.beginPath();
+        ctx.moveTo(13, -21);
+        ctx.quadraticCurveTo(20, -19 + fw, 26, -16 + fw);
+        ctx.lineTo(13, -12);
+        ctx.closePath();
+        ctx.fill();
         break;
       }
       case 'mine': {
+        // 晶簇下的岩基：矿场是"从地里挖出来"的，不是浮在空中的图标
+        ctx.fillStyle = 'rgba(10,18,30,0.72)';
+        ctx.beginPath();
+        ctx.ellipse(0, 9, 17, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.save();
         ctx.translate(0, -3);
         ctx.shadowColor = 'rgba(192,132,252,0.6)';
@@ -499,6 +596,13 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
         break;
       }
       case 'barracks': {
+        // 基座与门洞：营房是住人的建筑，不是三个符号
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(0, h - 2, h * 0.82, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(6,12,22,0.6)';
+        ctx.fillRect(-5, 4, 10, 12);
         ctx.lineWidth = 3;
         for (let i = -1; i <= 1; i++) {
           ctx.beginPath();
@@ -531,6 +635,15 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
         ctx.lineTo(-10, 8);
         ctx.closePath();
         ctx.fill();
+        // 石砌纹：塔身分层，更有"建筑感"
+        ctx.strokeStyle = 'rgba(6,12,22,0.4)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-6.4, 1);
+        ctx.lineTo(6.4, 1);
+        ctx.moveTo(-4.6, -3);
+        ctx.lineTo(4.6, -3);
+        ctx.stroke();
         ctx.save();
         ctx.rotate(b.facing);
         ctx.fillStyle = SIDE_DARK[b.side];
@@ -540,6 +653,16 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
         ctx.beginPath();
         ctx.arc(0, 0, 3.6, 0, Math.PI * 2);
         ctx.fill();
+        // 刚开火的枪口焰
+        if (b.cd > (BUILDING_DEFS.tower.weapon?.cooldown ?? 1) - 0.1) {
+          ctx.save();
+          ctx.rotate(b.facing);
+          ctx.fillStyle = 'rgba(253,230,138,0.95)';
+          ctx.beginPath();
+          ctx.arc(19, 0, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
         break;
       }
     }

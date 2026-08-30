@@ -1,6 +1,7 @@
-import { MAP_H, MAP_W } from '../core/config';
+import { MAP_H, MAP_W, TILE } from '../core/config';
 import type { World } from '../core/types';
 import type { Camera } from './camera';
+import { currentMap } from './renderer';
 import { SIDE_FILL } from './shapes';
 
 const SIDE = SIDE_FILL;
@@ -62,6 +63,13 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   g.moveTo(r.x + 2, r.y + (MAP_H / 2) * sy);
   g.lineTo(r.x + r.w - 2, r.y + (MAP_H / 2) * sy);
   g.stroke();
+
+  // 岩石地形：雷达上能看出"哪里绕得过去"
+  g.fillStyle = 'rgba(58,82,114,0.95)';
+  const rw = Math.max(1.6, TILE * sx), rh = Math.max(1.6, TILE * sy);
+  for (const [cx, cy] of currentMap().rocks) {
+    g.fillRect(r.x + cx * TILE * sx, r.y + cy * TILE * sy, rw, rh);
+  }
 
   // 水晶矿点
   g.fillStyle = '#c084fc';

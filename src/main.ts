@@ -1,7 +1,7 @@
 import { BUILDING_DEFS, MAPS } from './core/config';
 import { canPlace, createWorld, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
-import type { World } from './core/types';
+import type { Projectile, World } from './core/types';
 import { Camera } from './render/camera';
 import { Effects } from './render/effects';
 import { draw, initRenderer } from './render/renderer';
@@ -130,6 +130,8 @@ function startGame(diff: World['difficulty'], players = 2): void {
   ui.selection = [];
   input.cancelMode();
   fx.clear();
+  prevProjectiles = [];
+  shakeT = shakeDur = shakeAmp = shakeY = 0;
   alert = null;
   hud.hideAlert();
   cam.y = 1e9;
@@ -143,6 +145,32 @@ function startGame(diff: World['difficulty'], players = 2): void {
     hud.showTips();
     state = 'pause'; // 关闭提示后恢复
   }
+}
+
+/* ---------------- 命中火花：弹道消失即命中（模拟不发命中事件，渲染层自行对比前后帧） ---------------- */
+
+let prevProjectiles: Projectile[] = [];
+
+function updateImpactFx(): void {
+  if (!world) { prevProjectiles = []; return; }
+  const alive = new Set(world.projectiles);
+  for (const p of prevProjectiles) {
+    if (!alive.has(p)) fx.spark(p.tx, p.ty, p.side);
+  }
+  prevProjectiles = [...world.projectiles];
+}
+
+/* ---------------- 镜头震动（纯视觉，大爆炸时给一点冲击感） ---------------- */
+
+let shakeT = 0;
+let shakeDur = 0;
+let shakeAmp = 0;
+let shakeY = 0;
+
+function shake(amp: number, dur: number): void {
+  shakeAmp = Math.max(shakeAmp, amp);
+  shakeDur = Math.max(shakeDur, dur);
+  shakeT = Math.max(shakeT, dur);
 }
 
 /* ---------------- 挨打告警 ---------------- */
@@ -190,6 +218,13 @@ function drawAlertGlow(g: CanvasRenderingContext2D): void {
 
 /* ---------------- 事件 → 特效 / 音效 / 提示 ---------------- */
 
+/** 声音随事件与屏幕中心的距离衰减：远处的战斗更安静，近处的更响 */
+function volAt(y: number): number {
+  const center = cam.y + cam.viewH / 2;
+  const d = Math.abs(y - center);
+  return Math.max(0.12, 1 - d / (cam.viewH * 0.95));
+}
+
 function drainEvents(): void {
   if (!world) return;
   let ended = false;
@@ -201,7 +236,7 @@ function drainEvents(): void {
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
           else fx.flash(e.x, e.y, e.big ?? false);
         }
-        play('shot');
+        play('shot', e.y !== undefined ? volAt(e.y) : 1);
         // 混战里不能靠"攻击方不是我"判断挨打（AI 互相打也算），必须看事件里记录的挨打方
         if (e.targetSide === 0 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
           triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);
@@ -211,15 +246,16 @@ function drainEvents(): void {
         if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
           fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
         }
-        play('die');
+        play('die', e.y !== undefined ? volAt(e.y) : 1);
         break;
       case 'boom':
         if (e.x !== undefined && e.y !== undefined) fx.boomEvent(e.x, e.y, e.big ?? false);
-        play('boom');
+        play('boom', e.big ? 1 : e.y !== undefined ? volAt(e.y) : 1);
+        if (e.big) shake(5, 0.32); // 大建筑被毁：镜头震一下
         break;
       case 'built':
         if (e.x !== undefined && e.y !== undefined && e.side !== undefined) fx.builtEvent(e.x, e.y, e.side);
-        play('built');
+        play('built', e.y !== undefined ? volAt(e.y) : 1);
         break;
       case 'moveMark':
         if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y);
@@ -279,7 +315,15 @@ function loop(ts: number): void {
     if (acc > STEP * 6) acc = 0;
   }
   fx.update(dtReal);
-  if (world) drainEvents();
+  // 震动衰减：简谐衰减，比线性自然
+  if (shakeT > 0) {
+    shakeT -= dtReal;
+    shakeY = Math.sin(shakeT * 52) * shakeAmp * Math.max(0, shakeT / shakeDur);
+  } else shakeY = 0;
+  if (world) {
+    updateImpactFx();
+    drainEvents();
+  }
   if (alert) {
     alert.life -= dtReal;
     if (alert.life <= 0) { alert = null; hud.hideAlert(); }
@@ -295,9 +339,13 @@ function renderFrame(): void {
       ? `建造：${BUILDING_DEFS[ui.placing].name}`
       : ui.mode === 'rally' ? '点击地图设置集结点'
         : null; // 框选不占用操作行，避免拖动时底部卡槽闪烁
+    // 震动期间临时偏移相机（渲染完立即还原，不污染输入/HUD 用的相机状态）
+    const camY0 = cam.y;
+    if (shakeY) { cam.y += shakeY; cam.clamp(); }
     draw(ctx, world, cam, ui, fx); // 内部已在末尾绘制小地图
     minimap.drawAlert(ctx, alert, cam, world.time);
     drawAlertGlow(ctx);
+    if (shakeY) cam.y = camY0;
     hud.update(world, ui, modeLabel);
     rallyBtn.classList.toggle('armed', ui.mode === 'rally');
     for (const [t, btn] of buildBtns) btn.classList.toggle('armed', ui.mode === 'place' && ui.placing === t);
