@@ -467,7 +467,7 @@ function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected
   const recoilY = justFired ? -Math.sin(u.facing) * 2 : 0;
   ctx.save();
   ctx.translate(u.x + recoilX, u.y + recoilY);
-  // 轮廓形状 + 徽记统一由 shapes.ts 提供：步兵=圆形 / 弓手=箭头 / 重装=六边形
+  // 轮廓形状 + 徽记统一由 shapes.ts 提供：步兵=圆盾 / 弓手=箭头 / 重装=骑士盾
   drawUnitBody(ctx, u.type, u.side, r, u.facing, {
     moving: u.path.length > 0, t: time, phase: u.id * 1.7,
   });

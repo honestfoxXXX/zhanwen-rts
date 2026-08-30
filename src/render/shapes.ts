@@ -25,20 +25,20 @@ export const SIDE_DARK = ['#1e3a5f', '#6b1f1f', '#8a5a10'];
 export const SIDE_RING = ['rgba(91,141,214,0.7)', 'rgba(214,69,69,0.7)', 'rgba(223,165,59,0.7)'];
 export const SIDE_DIM = ['rgba(91,141,214,0.16)', 'rgba(214,69,69,0.16)', 'rgba(223,165,59,0.16)'];
 
-type ShapeKind = 'circle' | 'arrow' | 'hex';
-type EmblemKind = 'dot' | 'ring' | 'plates';
+type ShapeKind = 'circle' | 'arrow' | 'heater';
+type EmblemKind = 'boss' | 'quiver' | 'cross';
 
 interface UnitShape {
   shape: ShapeKind;
   rMul: number;      // 视觉半径倍率
   emblem: EmblemKind;
-  bob: number;       // 步行摆动幅度；重装为 0，强化"沉重"的体感差异
+  bob: number;       // 步行摆动幅度；骑士为 0，强化"沉重"的体感差异
 }
 
 export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
-  infantry: { shape: 'circle', rMul: 1.0, emblem: 'dot', bob: 0.9 },
-  archer: { shape: 'arrow', rMul: 1.15, emblem: 'ring', bob: 0.7 },
-  heavy: { shape: 'hex', rMul: 1.12, emblem: 'plates', bob: 0 },
+  infantry: { shape: 'circle', rMul: 1.0, emblem: 'boss', bob: 0.9 },
+  archer: { shape: 'arrow', rMul: 1.15, emblem: 'quiver', bob: 0.7 },
+  heavy: { shape: 'heater', rMul: 1.12, emblem: 'cross', bob: 0 },
 };
 
 function shapePath(g: CanvasRenderingContext2D, kind: ShapeKind, r: number): void {
@@ -56,11 +56,13 @@ function shapePath(g: CanvasRenderingContext2D, kind: ShapeKind, r: number): voi
     g.closePath();
     return;
   }
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    const x = Math.cos(a) * r, y = Math.sin(a) * r;
-    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-  }
+  // heater：骑士盾，顶部圆弧、两肋内收、底部收尖
+  g.moveTo(-r, -r * 0.5);
+  g.quadraticCurveTo(-r, -r, 0, -r);
+  g.quadraticCurveTo(r, -r, r, -r * 0.5);
+  g.lineTo(r * 0.55, r * 0.35);
+  g.lineTo(0, r * 1.1);
+  g.lineTo(-r * 0.55, r * 0.35);
   g.closePath();
 }
 
@@ -68,21 +70,33 @@ function drawEmblem(g: CanvasRenderingContext2D, kind: EmblemKind, vr: number, s
   g.fillStyle = SIDE_DARK[side];
   g.strokeStyle = SIDE_DARK[side];
   switch (kind) {
-    case 'dot':
+    case 'boss':
+      // 盾心：上半圈盾缘弧线 + 中心一颗亮圆点
+      g.lineWidth = Math.max(1.6, vr * 0.14);
       g.beginPath();
-      g.arc(0, 0, Math.max(2, vr * 0.26), 0, Math.PI * 2);
+      g.arc(0, 0, Math.max(2.6, vr * 0.55), Math.PI, 0);
+      g.stroke();
+      g.fillStyle = 'rgba(255,250,235,0.85)';
+      g.beginPath();
+      g.arc(0, Math.max(0.6, vr * 0.08), Math.max(1.8, vr * 0.2), 0, Math.PI * 2);
       g.fill();
       break;
-    case 'ring':
-      g.lineWidth = Math.max(1.6, vr * 0.16);
+    case 'quiver':
+      // 弦月（朝上）+ 中心竖直箭杆，读作箭囊；徽记不随朝向旋转
+      g.lineWidth = Math.max(1.6, vr * 0.14);
       g.beginPath();
-      g.arc(0, 0, Math.max(2.4, vr * 0.34), 0, Math.PI * 2);
+      g.arc(0, vr * 0.1, Math.max(2.6, vr * 0.5), Math.PI * 1.15, Math.PI * 1.85);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(0, -vr * 0.32);
+      g.lineTo(0, vr * 0.34);
       g.stroke();
       break;
-    case 'plates': {
-      const w = vr * 0.6, h = Math.max(1.6, vr * 0.14);
-      g.fillRect(-w / 2, -vr * 0.26 - h / 2, w, h);
-      g.fillRect(-w / 2, vr * 0.26 - h / 2, w, h);
+    case 'cross': {
+      // 十字：骑士盾上的竖条 + 横条
+      const w = Math.max(1.6, vr * 0.16);
+      g.fillRect(-w / 2, -vr * 0.45, w, vr * 0.9);
+      g.fillRect(-vr * 0.35, -vr * 0.18 - w / 2, vr * 0.7, w);
       break;
     }
   }
