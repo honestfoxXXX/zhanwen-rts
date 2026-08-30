@@ -193,65 +193,99 @@ export function drawBuildingIcon(
 
   switch (type) {
     case 'hq': {
+      // 城堡：主堡 + 双塔 + 雉堞 + 旗
       g.save();
       g.scale(pulse, pulse);
+      g.fillStyle = SIDE_FILL[side];
+      g.fillRect(-12, 2, 5, 10);
+      g.fillRect(7, 2, 5, 10);
+      g.fillRect(-6.5, -2, 13, 14);
+      g.fillRect(-12, -1, 5, 3);
+      g.fillRect(7, -1, 5, 3);
+      g.fillRect(-6.5, -5, 3.2, 3);
+      g.fillRect(-1.6, -5, 3.2, 3);
+      g.fillRect(3.3, -5, 3.2, 3);
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 1.6;
       g.beginPath();
-      g.moveTo(0, -14); g.lineTo(11, 0); g.lineTo(0, 14); g.lineTo(-11, 0);
+      g.moveTo(0, -5);
+      g.lineTo(0, -14);
+      g.stroke();
+      g.fillStyle = SIDE_FILL[side];
+      g.beginPath();
+      g.moveTo(0, -14);
+      g.lineTo(8, -11.5);
+      g.lineTo(0, -9);
       g.closePath();
       g.fill();
       g.restore();
-      g.lineWidth = 2;
-      g.beginPath();
-      g.arc(0, 0, 20, 0, Math.PI * 2);
-      g.stroke();
       break;
     }
     case 'mine': {
-      // 水晶簇：三根晶柱，与主基地的单个菱形明显不同
-      for (const [cx, cy, r] of [[0, -1, 12], [-9, 4, 8], [9, 4, 8]] as const) {
+      // 金矿：X 井架 + 金块堆
+      g.strokeStyle = '#6b4a2a';
+      g.lineWidth = 2.6;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(-8, -8);
+      g.lineTo(8, 8);
+      g.moveTo(8, -8);
+      g.lineTo(-8, 8);
+      g.stroke();
+      g.lineCap = 'butt';
+      g.fillStyle = '#f0c24e';
+      for (const [cx, cy, r] of [[-3, 6, 3], [3.5, 5.5, 2.6], [0, 2.5, 2.6]] as const) {
         g.beginPath();
-        g.moveTo(cx, cy - r);
-        g.lineTo(cx + r * 0.6, cy);
-        g.lineTo(cx, cy + r);
-        g.lineTo(cx - r * 0.6, cy);
-        g.closePath();
+        g.arc(cx, cy, r, 0, Math.PI * 2);
         g.fill();
       }
-      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.fillStyle = '#ffe9a8';
       g.beginPath();
-      g.moveTo(0, -13); g.lineTo(6, -1); g.lineTo(0, 2);
-      g.closePath();
+      g.arc(-4, 5, 1, 0, Math.PI * 2);
       g.fill();
       break;
     }
     case 'barracks': {
-      // 营房：屋身 + 人字屋顶
-      g.fillRect(-12, -4, 24, 14);
+      // 军营：三角帐篷 + 中柱
+      g.fillStyle = SIDE_FILL[side];
       g.beginPath();
-      g.moveTo(-16, -4); g.lineTo(0, -17); g.lineTo(16, -4);
+      g.moveTo(-11, 9);
+      g.lineTo(0, -11);
+      g.lineTo(11, 9);
       g.closePath();
       g.fill();
+      g.strokeStyle = 'rgba(245,236,210,0.55)';
+      g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(-8.5, 5);
+      g.lineTo(-1.2, -7.6);
+      g.stroke();
+      g.strokeStyle = SIDE_DARK[side];
       g.lineWidth = 1.6;
       g.beginPath();
-      g.moveTo(-4, 10); g.lineTo(-4, -1);
-      g.moveTo(4, 10); g.lineTo(4, -1);
+      g.moveTo(0, -11);
+      g.lineTo(0, 9);
       g.stroke();
       break;
     }
     case 'tower': {
-      // 塔：梯形塔身 + 塔尖 + 垛口
+      // 箭塔：梯形塔身 + 雉堞
+      g.fillStyle = SIDE_FILL[side];
       g.beginPath();
-      g.moveTo(-8, 10); g.lineTo(-5, -6); g.lineTo(5, -6); g.lineTo(8, 10);
+      g.moveTo(-6, 11);
+      g.lineTo(-4, -3);
+      g.lineTo(4, -3);
+      g.lineTo(6, 11);
       g.closePath();
       g.fill();
+      g.fillRect(-5.5, -7, 3, 4);
+      g.fillRect(-1.5, -7, 3, 4);
+      g.fillRect(2.5, -7, 3, 4);
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 1.4;
       g.beginPath();
-      g.moveTo(0, -17); g.lineTo(7, -6); g.lineTo(-7, -6);
-      g.closePath();
-      g.fill();
-      g.lineWidth = 1.6;
-      g.beginPath();
-      g.moveTo(-6, -6); g.lineTo(-6, -11);
-      g.moveTo(6, -6); g.lineTo(6, -11);
+      g.moveTo(-4.6, 4);
+      g.lineTo(4.6, 4);
       g.stroke();
       break;
     }
