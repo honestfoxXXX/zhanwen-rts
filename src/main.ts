@@ -1,5 +1,5 @@
 import { BUILDING_DEFS, MAPS } from './core/config';
-import { canPlace, createWorld, issueCommand, STEP, stepWorld } from './core/sim';
+import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
 import type { Projectile, World } from './core/types';
 import { Camera } from './render/camera';
@@ -69,9 +69,16 @@ const hud = new Hud({
     initAudio();
     ui.mode = 'place';
     ui.placing = t;
-    const wp = cam.screenToWorld(cam.cssW / 2, cam.cssH * 0.55);
-    const r = canPlace(world, 0, t, wp.x, wp.y);
-    ui.ghost = { type: t, x: r.x, y: r.y, valid: r.ok };
+    // 初始幽灵优先落在 HQ 附近（朝质心方向）的合法位，保证点开建造时 ✓ 可用；
+    // 之后仍跟随指针自由拖动。屏幕中心点在三人图可能压住 HQ/矿点或落在区域外。
+    const slot = findBuildSlot(world, 0, t, [[-80, 80], [80, 80], [0, 160], [-80, 160], [80, 160]]);
+    if (slot) {
+      ui.ghost = { type: t, x: slot.x, y: slot.y, valid: true };
+    } else {
+      const wp = cam.screenToWorld(cam.cssW / 2, cam.cssH * 0.55);
+      const r = canPlace(world, 0, t, wp.x, wp.y);
+      ui.ghost = { type: t, x: r.x, y: r.y, valid: r.ok };
+    }
     play('ui');
   },
   train: t => {
