@@ -5,6 +5,7 @@ import type { World } from './core/types';
 import { Camera } from './render/camera';
 import { Effects } from './render/effects';
 import { draw, initRenderer } from './render/renderer';
+import * as minimap from './render/minimap';
 import { Input } from './input/input';
 import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
@@ -16,7 +17,7 @@ const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
 const cam = new Camera();
 const fx = new Effects();
-const ui: UIState = { selection: [], mode: 'none', placing: null, ghost: null, boxRect: null };
+const ui: UIState = { selection: [], mode: 'none', placing: null, ghost: null, boxRect: null, rallyFor: null };
 
 let world: World | null = null;
 let state: 'menu' | 'play' | 'pause' | 'over' = 'menu';
@@ -84,6 +85,18 @@ const hud = new Hud({
     if (!ui.selection.length) hud.toast('没有可用的部队');
   },
   rally: () => { if (world && state === 'play') { ui.mode = 'rally'; play('ui'); } },
+  hold: () => {
+    if (!world || state !== 'play' || !ui.selection.length) return;
+    issueCommand(world, { type: 'hold', side: 0, ids: [...ui.selection] });
+    hud.toast(`${ui.selection.length} 支部队就地固守`);
+    play('ui');
+  },
+  retreat: () => {
+    if (!world || state !== 'play' || !ui.selection.length) return;
+    issueCommand(world, { type: 'retreat', side: 0, ids: [...ui.selection] });
+    hud.toast(`${ui.selection.length} 支部队撤退`);
+    play('ui');
+  },
   placeOk: () => { input.confirmPlace(); },
   placeNo: () => { input.cancelMode(); },
   desel: () => { input.clearSelection(); },
@@ -108,6 +121,8 @@ function startGame(diff: World['difficulty']): void {
   ui.selection = [];
   input.cancelMode();
   fx.clear();
+  alert = null;
+  hud.hideAlert();
   cam.y = 1e9;
   cam.clamp();
   acc = 0;
@@ -121,6 +136,49 @@ function startGame(diff: World['difficulty']): void {
   }
 }
 
+/* ---------------- 挨打告警 ---------------- */
+
+interface AlertState { x: number; y: number; building: boolean; life: number }
+let alert: AlertState | null = null;
+const alertCd = { building: 0, unit: 0 };
+
+/** 必须节流：否则敌人每一次开火都会弹提示，等于没有提示 */
+function triggerAlert(x: number, y: number, building: boolean): void {
+  const now = performance.now() / 1000;
+  const key = building ? 'building' : 'unit';
+  if (now - alertCd[key] < (building ? 3 : 6)) return;
+  alertCd[key] = now;
+  alert = { x, y, building, life: 2.4 };
+  hud.showAlert(building ? '⚠ 我方建筑遇袭' : '⚠ 部队遭遇敌军');
+  play('alarm');
+}
+
+/** 屏幕边缘泛红：让发生在屏幕外的战况有存在感 */
+function drawAlertGlow(g: CanvasRenderingContext2D): void {
+  if (!alert) return;
+  const k = Math.min(1, alert.life / 0.5);
+  const w = Math.min(26, cam.cssW * 0.09);
+  g.save();
+  g.globalAlpha = 0.5 * k;
+  const edges: [number, number, number, number][] = [
+    [0, 0, 0, w],
+    [0, cam.cssH - w, 0, cam.cssH],
+    [0, 0, w, 0],
+    [cam.cssW - w, 0, cam.cssW, 0],
+  ];
+  for (const [x0, y0, x1, y1] of edges) {
+    const grad = g.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0, 'rgba(248,113,113,0.9)');
+    grad.addColorStop(1, 'rgba(248,113,113,0)');
+    g.fillStyle = grad;
+    g.fillRect(
+      Math.min(x0, x1), Math.min(y0, y1),
+      Math.abs(x1 - x0) || cam.cssW, Math.abs(y1 - y0) || cam.cssH,
+    );
+  }
+  g.restore();
+}
+
 /* ---------------- 事件 → 特效 / 音效 / 提示 ---------------- */
 
 function drainEvents(): void {
@@ -129,11 +187,21 @@ function drainEvents(): void {
   for (const e of world.events) {
     switch (e.type) {
       case 'shot':
-        if (e.x !== undefined && e.y !== undefined) fx.flash(e.x, e.y, e.big ?? false);
+        if (e.x !== undefined && e.y !== undefined) {
+          // 近战没有弹道，用一道挥砍弧线表现，与远程的枪口闪光区分开
+          if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
+          else fx.flash(e.x, e.y, e.big ?? false);
+        }
         play('shot');
+        // 敌方开火 ⇒ 我方挨打（实体都有阵营且只打对方），发生在屏幕外也必须让玩家知道
+        if (e.side === 1 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
+          triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);
+        }
         break;
       case 'die':
-        if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) fx.dieEvent(e.x, e.y, e.r, e.side);
+        if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
+          fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
+        }
         play('die');
         break;
       case 'boom':
@@ -195,6 +263,10 @@ function loop(ts: number): void {
   }
   fx.update(dtReal);
   if (world) drainEvents();
+  if (alert) {
+    alert.life -= dtReal;
+    if (alert.life <= 0) { alert = null; hud.hideAlert(); }
+  }
   renderFrame();
 }
 
@@ -207,6 +279,8 @@ function renderFrame(): void {
       : ui.mode === 'rally' ? '点击地图设置集结点'
         : null; // 框选不占用操作行，避免拖动时底部卡槽闪烁
     draw(ctx, world, cam, ui, fx); // 内部已在末尾绘制小地图
+    minimap.drawAlert(ctx, alert, cam, world.time);
+    drawAlertGlow(ctx);
     hud.update(world, ui, modeLabel);
     rallyBtn.classList.toggle('armed', ui.mode === 'rally');
     for (const [t, btn] of buildBtns) btn.classList.toggle('armed', ui.mode === 'place' && ui.placing === t);

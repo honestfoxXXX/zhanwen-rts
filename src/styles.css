@@ -60,10 +60,40 @@ button:disabled { opacity: 0.35; cursor: default; }
 #topbar .res span:last-child { color: #64d3b7; font-size: 12px; margin-left: 4px; }
 #topbar .pop { color: #94a3b8; font-size: 12px; flex: 1; text-align: center; }
 #topbar .pop b { color: #e2e8f0; }
+#topbar .pop span { color: #67e8f9; font-size: 11px; margin-left: 4px; }
+#topbar .clock { color: #94a3b8; font-size: 12px; font-variant-numeric: tabular-nums; }
 #btnPause { width: 34px; height: 30px; font-size: 13px; line-height: 1; }
 
+/* 军力对比条：一眼看出现在是优势还是劣势 */
+#armyBar {
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  display: flex; background: rgba(2, 6, 16, 0.55); pointer-events: none;
+}
+#armyBar i { display: block; height: 100%; transition: width 0.25s linear; }
+#armyMine { background: linear-gradient(90deg, #0891b2, #67e8f9); }
+#armyFoe { background: linear-gradient(90deg, #fb7185, #fda4af); }
+
+/* 动态目标引导 */
+#goal {
+  position: absolute; top: calc(40px + env(safe-area-inset-top)); left: 0; right: 0;
+  text-align: center; font-size: 11.5px; color: #7dd3fc;
+  pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* 挨打告警横幅 */
+#alertBanner {
+  position: absolute; top: 30%; left: 50%; transform: translateX(-50%);
+  background: rgba(127, 29, 29, 0.85);
+  border: 1px solid rgba(248, 113, 113, 0.7);
+  color: #fecaca; font-size: 13px; font-weight: 600;
+  padding: 7px 16px; border-radius: 999px;
+  pointer-events: none; white-space: nowrap;
+  animation: alertPulse 0.9s ease-in-out infinite;
+}
+@keyframes alertPulse { 0%, 100% { opacity: 0.82; } 50% { opacity: 1; } }
+
 #selchip {
-  position: absolute; top: calc(44px + env(safe-area-inset-top)); left: 10px;
+  position: absolute; top: calc(62px + env(safe-area-inset-top)); left: 10px;
   display: flex; align-items: center; gap: 6px;
   background: rgba(2, 6, 16, 0.82);
   border: 1px solid rgba(34, 211, 238, 0.4);

@@ -1,6 +1,6 @@
 /** 纯视觉层特效（不影响模拟确定性） */
 interface Fx {
-  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke';
+  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash';
   x: number; y: number;
   t: number; dur: number;
   r: number;
@@ -21,14 +21,15 @@ export class Effects {
   }
 
   push(kind: Fx['kind'], x: number, y: number, opts: { r?: number; color?: string; big?: boolean } = {}): void {
-    const dur = kind === 'boom' ? 0.55 : kind === 'mark' ? 0.5 : kind === 'ring' ? 0.4 : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : 0.14;
+    const dur = kind === 'boom' ? 0.55 : kind === 'mark' ? 0.5 : kind === 'ring' ? 0.4
+      : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : kind === 'slash' ? 0.18 : 0.14;
     this.add({ kind, x, y, dur, r: opts.r ?? 10, color: opts.color ?? '#ffffff', big: opts.big ?? false, vx: 0, vy: 0 });
   }
 
-  dieEvent(x: number, y: number, r: number, side: 0 | 1): void {
-    this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big: false, vx: 0, vy: 0 });
-    // 四散碎片
-    for (let i = 0; i < 4; i++) {
+  dieEvent(x: number, y: number, r: number, side: 0 | 1, big = false): void {
+    this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big, vx: 0, vy: 0 });
+    // 四散碎片：体型大的单位碎得更夸张
+    for (let i = 0; i < (big ? 7 : 4); i++) {
       const a = (i / 4) * Math.PI * 2 + 0.6;
       const sp = 60 + (i % 2) * 30;
       this.add({ kind: 'debris', x, y, dur: 0.45, r: 1.8, color: SIDE_COLORS[side], big: false, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
@@ -58,6 +59,11 @@ export class Effects {
 
   flash(x: number, y: number, big: boolean): void {
     this.add({ kind: 'flash', x, y, dur: 0.14, r: big ? 7 : 4.5, color: '#fde68a', big, vx: 0, vy: 0 });
+  }
+
+  /** 近战挥砍：没有弹道，用一道弧线表现，和远程的闪光区分开 */
+  slash(x: number, y: number, big: boolean): void {
+    this.add({ kind: 'slash', x, y, dur: 0.18, r: big ? 19 : 13, color: '#e2e8f0', big, vx: 0, vy: 0 });
   }
 
   update(dt: number): void {
@@ -146,6 +152,15 @@ export class Effects {
           g.beginPath();
           g.arc(f.x, f.y, f.r * (1 - k * 0.5), 0, Math.PI * 2);
           g.fill();
+          break;
+        }
+        case 'slash': {
+          g.globalAlpha = (1 - k) * 0.9;
+          g.strokeStyle = f.color;
+          g.lineWidth = (f.big ? 3.5 : 2.4) * (1 - k * 0.4);
+          g.beginPath();
+          g.arc(f.x, f.y, f.r, -0.95 + k * 0.7, 0.95 + k * 0.7);
+          g.stroke();
           break;
         }
       }

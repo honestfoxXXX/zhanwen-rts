@@ -1,6 +1,7 @@
 import { BUILDING_DEFS, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
 import type { BuildingType, Difficulty, Side, UnitType, World } from '../core/types';
 import type { UIState } from '../input/input';
+import { drawIcon } from '../render/shapes';
 
 const DENY_TEXT: Record<string, string> = {
   cost: '水晶不足',
@@ -24,6 +25,8 @@ export interface HudHooks {
   placeOk: () => void;
   placeNo: () => void;
   desel: () => void;
+  hold: () => void;
+  retreat: () => void;
   sound: () => string;
 }
 
@@ -35,8 +38,11 @@ export class Hud {
   private els = {
     hud: $('hud'), menu: $('menu'), pause: $('pauseScr'), result: $('resultScr'), tips: $('tips'),
     crystal: $('resCrystal'), income: $('resIncome'), pop: $('resPop'),
+    queue: $('resQueue'), time: $('resTime'),
+    armyMine: $('armyMine'), armyFoe: $('armyFoe'),
+    goal: $('goal'), alertBanner: $('alertBanner'),
     selchip: $('selchip'), selCount: $('selCount'),
-    rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), placeRow: $('placeRow'),
+    rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'),
@@ -55,10 +61,14 @@ export class Hud {
       const t = b.dataset.train as UnitType;
       this.trainBtns.set(t, b);
       b.addEventListener('click', () => hooks.train(t));
+      this.paintIcon(b, 'unit', t); // 卡槽图形与战场内同源，避免两套美术各画各的
     });
+    for (const [t, b] of this.buildBtns) this.paintIcon(b, 'building', t);
     $('btnPause').addEventListener('click', () => hooks.pause());
     $('btnAll').addEventListener('click', () => hooks.selectAll());
     $('btnRally').addEventListener('click', () => hooks.rally());
+    $('btnHold').addEventListener('click', () => hooks.hold());
+    $('btnRetreat').addEventListener('click', () => hooks.retreat());
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
     this.els.placeNo.addEventListener('click', () => hooks.placeNo());
     $('btnDesel').addEventListener('click', () => hooks.desel());
@@ -144,6 +154,8 @@ export class Hud {
     const sel = ui.selection.length;
     this.els.selchip.classList.toggle('hidden', sel === 0);
     this.els.selCount.textContent = `已选 ${sel}`;
+    // 有选中部队时才出现固守/撤退，避免卡槽常年被无关按钮挤占
+    this.els.rowCommand.classList.toggle('hidden', sel === 0);
     const modeActive = ui.mode !== 'none' && modeLabel !== null;
     this.els.rowBuild.classList.toggle('hidden', modeActive);
     this.els.rowUnit.classList.toggle('hidden', modeActive);
@@ -160,6 +172,21 @@ export class Hud {
     this.els.crystal.textContent = String(cr);
     this.els.income.textContent = `+${world.income[0].toFixed(0)}/s`;
     this.els.pop.textContent = `${world.popUsed[0]}/${POP_CAP}`;
+
+    const mm = Math.floor(world.time / 60), ss = Math.floor(world.time % 60);
+    this.els.time.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+
+    const qRemain = this.queueRemain(world);
+    this.els.queue.textContent = qRemain > 0.05 ? `· 造兵 ${qRemain.toFixed(0)}s` : '';
+
+    // 军力对比：一眼看出现在是优势还是劣势
+    const mine = armyValue(world, 0), foe = armyValue(world, 1);
+    const total = mine + foe;
+    const share = total > 0 ? mine / total : 0.5;
+    this.els.armyMine.style.width = `${(share * 100).toFixed(1)}%`;
+    this.els.armyFoe.style.width = `${((1 - share) * 100).toFixed(1)}%`;
+
+    this.els.goal.textContent = this.goalText(world);
 
     for (const [t, btn] of this.buildBtns) {
       const d = BUILDING_DEFS[t];
@@ -182,6 +209,66 @@ export class Hud {
       } else if (badge) badge.remove();
     }
   }
+
+  /** 用与战场内同源的形状画卡槽图标，取代原先对不上的 unicode 字符 */
+  private paintIcon(btn: HTMLButtonElement, kind: 'unit' | 'building', type: UnitType | BuildingType): void {
+    const host = btn.querySelector('i');
+    if (!host) return;
+    const size = 26;
+    const ratio = Math.min(2.5, window.devicePixelRatio || 1);
+    host.textContent = '';
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(size * ratio);
+    cv.height = Math.round(size * ratio);
+    cv.style.width = `${size}px`;
+    cv.style.height = `${size}px`;
+    host.appendChild(cv);
+    const g = cv.getContext('2d');
+    if (!g) return;
+    g.scale(ratio, ratio);
+    drawIcon(g, kind, type, 0, size);
+  }
+
+  /** 挨打告警：屏幕外发生的战况若无提示，玩家完全无感知 */
+  showAlert(text: string): void {
+    this.els.alertBanner.textContent = text;
+    this.els.alertBanner.classList.remove('hidden');
+  }
+
+  hideAlert(): void {
+    this.els.alertBanner.classList.add('hidden');
+  }
+
+  /** 动态目标：告诉玩家这会儿该干什么，而不是只给一次性的静态提示 */
+  private goalText(world: World): string {
+    const own = world.buildings.filter(b => b.side === 0 && !b.dead);
+    if (!own.some(b => b.type === 'barracks')) return '目标：先建一座兵营';
+    if (own.filter(b => b.type === 'mine').length < 2) return '目标：占水晶矿建矿场 —— 收入就是兵力';
+    if (world.popUsed[0] < 12) return `目标：攒兵 ${world.popUsed[0]}/12`;
+    return '目标：进军，摧毁敌方主基地';
+  }
+
+  /** 造兵队列剩余时长：排队总时长 + 正在训练的兵营里最久的那个 */
+  private queueRemain(world: World): number {
+    let t = 0;
+    for (const u of world.queue[0]) t += UNIT_DEFS[u].trainTime;
+    let active = 0;
+    for (const b of world.buildings) {
+      if (b.side !== 0 || b.type !== 'barracks' || b.dead || b.buildT > 0 || !b.trainType) continue;
+      active = Math.max(active, b.trainT);
+    }
+    return t + active;
+  }
+}
+
+/** 军力估值：造价 × 剩余血量比例 */
+function armyValue(world: World, side: Side): number {
+  let v = 0;
+  for (const u of world.units) {
+    if (u.dead || u.side !== side) continue;
+    v += UNIT_DEFS[u.type].cost * (u.hp / u.maxHp);
+  }
+  return v;
 }
 
 export { DENY_TEXT, NODES };

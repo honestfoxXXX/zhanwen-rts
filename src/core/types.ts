@@ -97,6 +97,8 @@ export interface SimEvent {
   winner?: Side;
   /** shot 事件附带：被打的是建筑(true)还是部队(false)，用于挨打告警分级 */
   targetBuilding?: boolean;
+  /** shot 事件附带：近战(true)没有弹道，表现层用挥砍弧线而非枪口闪光 */
+  melee?: boolean;
 }
 
 type WithTick<T> = T & { tick?: number };

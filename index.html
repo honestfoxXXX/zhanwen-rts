@@ -19,9 +19,13 @@
       <div id="hud" class="hidden">
         <div id="topbar">
           <div class="res"><span class="gem">◆</span><b id="resCrystal">0</b><span id="resIncome">+0/s</span></div>
-          <div class="pop">兵力 <b id="resPop">0/40</b></div>
+          <div class="pop">兵力 <b id="resPop">0/40</b><span id="resQueue"></span></div>
+          <div class="clock" id="resTime">0:00</div>
           <button id="btnPause" class="icon" aria-label="暂停">‖</button>
         </div>
+        <div id="armyBar" title="双方军力对比"><i id="armyMine"></i><i id="armyFoe"></i></div>
+        <div id="goal"></div>
+        <div id="alertBanner" class="hidden"></div>
         <div id="selchip" class="hidden"><span id="selCount">已选 0</span><button id="btnDesel" aria-label="取消选择">✕</button></div>
         <div id="toasts"></div>
         <div id="dock">
@@ -29,6 +33,10 @@
             <button id="btnPlaceNo" class="slim no">✕ 取消</button>
             <div id="placeHint">放置</div>
             <button id="btnPlaceOk" class="slim ok">✓ 建造</button>
+          </div>
+          <div class="row hidden" id="rowCommand">
+            <button class="card wide" id="btnHold"><span>固守</span></button>
+            <button class="card wide" id="btnRetreat"><span>撤退</span></button>
           </div>
           <div class="row" id="rowBuild">
             <button class="card" data-build="mine"><i>◆</i><span>矿场</span><em>100</em></button>
@@ -86,7 +94,9 @@
           <li>👆 点选部队后点地图下令；双击部队选中屏幕内全部同类</li>
           <li>◆ 建矿场占领水晶矿，矿多兵多</li>
           <li>⚔ 所有移动都是进攻令，部队沿途自动交战</li>
-          <li>🚩「集结」设定新兵集结点，「全选」一键选中全军</li>
+          <li>🚩「集结」设定新兵集结点；双击兵营可单独给它设集结点</li>
+          <li>🛡 选中部队后可下「固守」（不追击）或「撤退」（撤回主基地）</li>
+          <li>⚔ 克制三角：弓手 › 重装 › 步兵 › 弓手</li>
         </ul>
         <button id="btnTipsOk" class="primary">明白了</button>
       </div>

@@ -6,7 +6,8 @@ import { findPath, isBlockedTile, lineClear, nearestFreeTile } from './pathfindi
 import { rngNext } from './rng';
 import { aiThink } from './ai';
 import type {
-  Building, BuildingType, Command, DenyReason, Side, SimEvent, Unit, UnitType, Vec, World,
+  AIState, Building, BuildingType, Command, CrystalNode, DenyReason, Projectile,
+  Side, SimEvent, Unit, UnitType, Vec, World,
 } from './types';
 
 export const STEP = 1 / 60;
@@ -338,7 +339,8 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
   applyDamage(w, t, dmg, u.side);
   ev(w, {
     type: 'shot', x: u.x, y: u.y, tx: t.x, ty: t.y,
-    side: u.side, big: u.type === 'heavy', targetBuilding: !isUnit(t),
+    side: u.side, big: u.type === 'heavy',
+    targetBuilding: !isUnit(t), melee: def.projectileSpeed === 0,
   });
   if (def.projectileSpeed > 0) {
     const d = dist(u.x, u.y, t.x, t.y);
@@ -406,8 +408,8 @@ function updateUnit(w: World, u: Unit, dt: number): void {
     if (!ot || ot.dead) { u.order = { kind: 'idle' }; u.engageId = null; tgt = null; }
     else { u.engageId = ot.id; tgt = ot; }
   }
-  // 固守/撤退中的部队也会自动迎战，只有明确的移动令才保持"只打挡路的"
-  if (!tgt && u.order.kind !== 'attack') {
+  // 索敌范围：固守会迎战射程内之敌；撤退则完全脱战，否则会掉头追击、抵消撤退令
+  if (!tgt && (u.order.kind === 'idle' || u.order.kind === 'move' || u.order.kind === 'hold')) {
     const a = acquireTarget(w, u, def.aggro);
     if (a) { u.engageId = a.id; tgt = a; }
   }
@@ -641,7 +643,10 @@ function cleanup(w: World): void {
   for (const u of deadUnits) {
     deadIds.add(u.id);
     w.index.delete(u.id);
-    ev(w, { type: 'die', x: u.x, y: u.y, r: UNIT_DEFS[u.type].radius, side: u.side });
+    ev(w, {
+      type: 'die', x: u.x, y: u.y, r: UNIT_DEFS[u.type].radius,
+      side: u.side, big: u.type === 'heavy',
+    });
     w.popUsed[u.side] -= UNIT_DEFS[u.type].pop;
   }
   if (deadUnits.length) w.units = w.units.filter(u => !u.dead);
@@ -743,26 +748,35 @@ export function hashWorld(w: World): number {
   return h >>> 0;
 }
 
-/** 序列化整局状态（blocked 转为普通数组，其余均为可 JSON 化的普通对象） */
+/** 可 JSON 化的世界快照（blocked 转普通数组，索引与事件不入库） */
+interface WorldSnapshot {
+  tick: number; time: number; seed: number; rngState: number; difficulty: World['difficulty'];
+  units: Unit[]; buildings: Building[]; nodes: CrystalNode[]; projectiles: Projectile[];
+  crystals: number[]; popUsed: number[]; income: number[]; queue: UnitType[][];
+  rally: Vec[]; blocked: number[]; nextId: number;
+  gameOver: null | { winner: Side }; stats: { kills: number[] }; ai: AIState;
+}
+
 export function serializeWorld(w: World): string {
-  return JSON.stringify({
-    v: 1,
+  const s: WorldSnapshot = {
     tick: w.tick, time: w.time, seed: w.seed, rngState: w.rngState, difficulty: w.difficulty,
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
     gameOver: w.gameOver, stats: w.stats, ai: w.ai,
-  });
+  };
+  return JSON.stringify(s);
 }
 
-/** 反序列化。索引会依据 units/buildings 重建 */
+/** 反序列化。索引依据 units/buildings 重建，事件清空（事件只是表现层的输出队列） */
 export function deserializeWorld(json: string): World {
-  const o = JSON.parse(json) as Omit<World, 'blocked' | 'index'> & { blocked: number[] };
+  const s = JSON.parse(json) as WorldSnapshot;
   const w: World = {
-    ...o,
-    blocked: Uint8Array.from(o.blocked),
-    index: new Map(),
-    events: [],
+    tick: s.tick, time: s.time, seed: s.seed, rngState: s.rngState, difficulty: s.difficulty,
+    units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
+    crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
+    rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),
+    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai,
   };
   for (const u of w.units) w.index.set(u.id, u);
   for (const b of w.buildings) w.index.set(b.id, b);

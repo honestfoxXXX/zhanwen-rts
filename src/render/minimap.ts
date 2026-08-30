@@ -92,3 +92,24 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   );
   g.restore();
 }
+
+export interface AlertMark { x: number; y: number; building: boolean }
+
+/** 在雷达上标出正在挨打的位置（纯视觉，不影响模拟） */
+export function drawAlert(g: CanvasRenderingContext2D, alert: AlertMark | null, cam: Camera, time: number): void {
+  if (!alert) return;
+  const r = minimapRect(cam.cssW, cam.cssH);
+  const sx = r.w / MAP_W, sy = r.h / MAP_H;
+  const px = r.x + alert.x * sx, py = r.y + alert.y * sy;
+  const pulse = 5 + Math.sin(time * 10) * 2;
+  g.save();
+  g.globalAlpha = 0.5;
+  g.fillStyle = '#f87171';
+  g.beginPath();
+  g.arc(px, py, pulse, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 1;
+  g.fillStyle = alert.building ? '#fecaca' : '#fca5a5';
+  g.fillRect(px - 1.5, py - 1.5, 3, 3);
+  g.restore();
+}

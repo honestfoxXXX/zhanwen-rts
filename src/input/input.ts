@@ -13,6 +13,7 @@ export interface UIState {
   placing: BuildingType | null;
   ghost: GhostInfo;
   boxRect: { x0: number; y0: number; x1: number; y1: number } | null;
+  rallyFor: number | null; // 双击兵营后，为这个兵营单独设集结点
 }
 
 export interface InputHooks {
@@ -161,6 +162,15 @@ export class Input {
     return this.pointers.size > 1;
   }
 
+  /**
+   * 拾取容差按屏幕像素恒定换算（世界单位）。
+   * 相机是横向铺满，手机上 scale 约 0.54，单位直径只有 10 CSS px，
+   * 若沿用固定 16 世界单位，实际只有 8.7 CSS px，远低于可点范围。
+   */
+  private pickTol(): number {
+    return Math.max(16, 20 / this.cam.scale);
+  }
+
   private moveGhost(sx: number, sy: number): void {
     const world = this.getWorld();
     if (!world || !this.ui.placing) return;
@@ -193,11 +203,17 @@ export class Input {
       return;
     }
 
-    // 集结点模式
+    // 集结点模式（可能是在给某个具体兵营设置）
     if (this.ui.mode === 'rally') {
-      this.hooks.command({ type: 'rally', side: 0, x: wp.x, y: wp.y });
-      this.hooks.toast('集结点已设置');
+      const forB = this.ui.rallyFor;
+      this.hooks.command(
+        forB !== null
+          ? { type: 'rally', side: 0, x: wp.x, y: wp.y, buildingId: forB }
+          : { type: 'rally', side: 0, x: wp.x, y: wp.y },
+      );
+      this.hooks.toast(forB !== null ? '该兵营集结点已设置' : '集结点已设置');
       this.ui.mode = 'none';
+      this.ui.rallyFor = null;
       return;
     }
 
@@ -208,7 +224,7 @@ export class Input {
     }
 
     // 点选单位
-    const u = pickUnitAt(world, wp.x, wp.y, null);
+    const u = pickUnitAt(world, wp.x, wp.y, null, this.pickTol());
     if (u && u.side === 0) {
       const now = performance.now();
       const isDouble = now - this.lastTap.t < 350 && this.lastTap.id === u.id &&
@@ -233,10 +249,23 @@ export class Input {
       return;
     }
 
-    // 点自家建筑 → 信息
+    // 点自家建筑：单击看信息，双击兵营则单独给它设集结点
     const b = pickBuildingAt(world, wp.x, wp.y);
     if (b && b.side === 0) {
-      this.hooks.toast(`${b.type === 'hq' ? '主基地' : b.type === 'mine' ? '矿场' : b.type === 'barracks' ? '兵营' : '箭塔'} ${Math.max(0, Math.ceil(b.hp))}/${b.maxHp}`);
+      const name = b.type === 'hq' ? '主基地' : b.type === 'mine' ? '矿场' : b.type === 'barracks' ? '兵营' : '箭塔';
+      const now = performance.now();
+      // 用负 id 作为建筑的双击键，避免与单位 id 撞上
+      const isDouble = now - this.lastTap.t < 350 && this.lastTap.id === -b.id &&
+        Math.hypot(sx - this.lastTap.x, sy - this.lastTap.y) < 28;
+      if (isDouble && b.type === 'barracks') {
+        this.lastTap = { t: 0, id: -1, x: 0, y: 0 };
+        this.ui.mode = 'rally';
+        this.ui.rallyFor = b.id;
+        this.hooks.toast('点击地图，为该兵营设置集结点');
+        return;
+      }
+      this.lastTap = { t: now, id: -b.id, x: sx, y: sy };
+      this.hooks.toast(`${name} ${Math.max(0, Math.ceil(b.hp))}/${b.maxHp}`);
       return;
     }
     if (b && b.side === 1 && this.ui.selection.length) {
@@ -276,6 +305,7 @@ export class Input {
     this.ui.placing = null;
     this.ui.ghost = null;
     this.ui.boxRect = null;
+    this.ui.rallyFor = null;
   }
 
   clearSelection(): void {
