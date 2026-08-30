@@ -59,8 +59,10 @@ describe('确定性', () => {
   it('序列化保留建造、生产与 AI 状态', () => {
     const a = createWorld('normal', 99);
     run(a, 30);
+    a.crystals[0] = 1000; // 注资：经济数值可调，本测试只关心指令与序列化
     issueCommand(a, { type: 'build', side: 0, building: 'barracks', x: 360, y: 1100 });
     run(a, 10);
+    a.crystals[0] = 1000;
     issueCommand(a, { type: 'train', side: 0, unit: 'heavy' });
     const b = deserializeWorld(serializeWorld(a));
     expect(b.buildings.filter(v => v.side === 0 && v.type === 'barracks').length).toBe(1);

@@ -104,11 +104,12 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     queue: Array.from({ length: players }, () => [] as UnitType[]),
     // 默认集结点：按出生位置推导。1v1 是「位置规则」—— 南侧（纵深最深）出生点前压 560，
     // 北侧贴基地 180，让主力在深方半场碰撞（对称集结点会把碰撞线推向玩家，普通档会从 ~80% 塌到 0）。
-    // 三方是等边三角、三方完全等价，集结距离也必须一致（240），任何偏向都会破坏公平。
+    // 三方是等边三角、三方完全等价，集结距离也必须一致：贴家 120 —— 三方图的矿线互相贴脸，
+    // 集结在前线只会让新兵进门就被绞死、谁也攒不出攻城的拳头；在家门口集结才能攒出波次。
     rally: map.spawns.map((s, i) => {
       const dx = midX - s.pos.x, dy = midY - s.pos.y;
       const len = Math.hypot(dx, dy) || 1;
-      const off = players === 3 ? 240 : (i === 0 ? 560 : 180);
+      const off = players === 3 ? 120 : (i === 0 ? 560 : 180);
       return { x: s.pos.x + (dx / len) * off, y: s.pos.y + (dy / len) * off };
     }),
     blocked,
@@ -124,7 +125,9 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     },
     // 每个阵营一份 AI 状态（0 号位玩家不用，仅占位保持下标对齐）
     ai: Array.from({ length: players }, () => ({
-      thinkT: 1.2, defending: false, attacking: false, waveCd: 18, waveStart: 0, waveAt: 0,
+      thinkT: 1.2, defending: false, attacking: false,
+      waveCd: players === 3 ? 27 : 45, // 首波更晚：给双方留出扩张与中期拉锯的时间
+      waveStart: 0, waveAt: 0,
       scout: { infantry: 0, archer: 0, heavy: 0 },
       goal: null,
       waves: 0,
@@ -593,7 +596,7 @@ function updateEconomy(w: World, dt: number): void {
   // 难度倍率只作用于 AI（1 号及之后），玩家恒为 1.0。
   // 三方混战里两个 AI 会互相消耗、且都不优先打玩家，导致 1v2 反而比 1v1 轻松，
   // 所以 3 人局给 AI 额外加乘，让"被两方夹击"的压迫感成立。
-  const aiScale = w.players === 3 ? 0.7 : 1;
+  const aiScale = w.players === 3 ? 0.8 : 1;
   for (let s = 1; s < w.players; s++) inc[s] *= DIFFICULTY[w.difficulty].incomeMult * aiScale;
   w.income = inc;
   for (let s = 0; s < w.players; s++) {

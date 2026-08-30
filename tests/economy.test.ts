@@ -18,7 +18,7 @@ describe('economy', () => {
   it('主基地被动产钱', () => {
     const before = w.crystals[0];
     run(10);
-    expect(w.crystals[0]).toBeGreaterThan(before + 45); // 5/s * 10s
+    expect(w.crystals[0]).toBeGreaterThan(before + 35); // 4/s * 10s
   });
 
   it('矿场建成后提升收入', () => {
@@ -29,7 +29,7 @@ describe('economy', () => {
     expect(node.mineId).not.toBeNull();
     run(6); // 建造 5s
     const incBefore = w.income[0];
-    expect(incBefore).toBeGreaterThanOrEqual(10); // HQ 5 + 矿场 5
+    expect(incBefore).toBeGreaterThanOrEqual(8); // HQ 4 + 矿场 4
   });
 
   it('水晶不足时拒绝建造', () => {

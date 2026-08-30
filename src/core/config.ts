@@ -6,7 +6,7 @@ export const ROWS = 48;
 export const MAP_W = COLS * TILE; // 720
 export const MAP_H = ROWS * TILE; // 1920
 export const BUILD_LINE = MAP_H / 2; // 960 前线
-export const POP_CAP = 40;
+export const POP_CAP = 50;
 export const START_CRYSTAL = 150;
 
 /**
@@ -23,10 +23,10 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
-  hq: { name: '城堡', cost: 0, hp: 1400, buildTime: 0, half: 40, income: 5, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
-  mine: { name: '金矿', cost: 100, hp: 220, buildTime: 5, half: 40, income: 5, weapon: null },
-  barracks: { name: '军营', cost: 150, hp: 450, buildTime: 8, half: 40, income: 0, weapon: null },
-  tower: { name: '箭塔', cost: 120, hp: 340, buildTime: 6, half: 40, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
+  hq: { name: '城堡', cost: 0, hp: 2800, buildTime: 0, half: 40, income: 4, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
+  mine: { name: '金矿', cost: 100, hp: 320, buildTime: 5, half: 40, income: 4, weapon: null },
+  barracks: { name: '军营', cost: 150, hp: 650, buildTime: 8, half: 40, income: 0, weapon: null },
+  tower: { name: '箭塔', cost: 120, hp: 520, buildTime: 6, half: 40, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
 };
 
 /** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
@@ -201,25 +201,25 @@ export const DIFFICULTY: Record<Difficulty, {
   weights: Record<UnitType, number>;
   think: number;
 }> = {
-  // 数值经 scripts/balance.ts 无头跑批校准，目标胜率：简单 ~100% / 普通 ~75% / 困难 ~45%
-  // 注意：建造区改为以中线 y=960 对称切分后，玩家可用纵深变大、AI 被推远，
-  // 因此 AI 的整体数值要比「前压不对称」时期更高才能维持同等难度。
+  // 数值经 scripts/balance.ts 无头跑批校准。节奏目标：1v1 普通 ~5.5-6 分钟、
+  // 3 人混战 ~9 分钟（扩张 → 中期拉锯 → 攻城），胜率梯度 简单 ~100%/50% / 普通 ~88%/50% / 困难 ~38%。
+  // 注意：建造区以中线 y=960 对称切分，AI 的整体数值要比「前压不对称」时期更高才能维持同等难度。
   easy: {
-    label: '简单', incomeMult: 0.7, maxMines: 3, maxBarracks: 1, maxTowers: 0,
-    wavePop: 16, waveCd: 50, waveMax: 22, retreat: false,
+    label: '简单', incomeMult: 0.75, maxMines: 4, maxBarracks: 1, maxTowers: 1,
+    wavePop: 30, waveCd: 95, waveMax: 40, retreat: false,
     weights: { infantry: 0.7, archer: 0.3, heavy: 0 }, think: 0.6,
   },
   // 三档必须是"单调更强"：收入更高、矿更多、兵营更多、出击更频繁。
   // 曾经把困难的 waveCd 调得比普通还长，结果两档挤在一起、难度选择失去意义。
   normal: {
     label: '普通', incomeMult: 0.99, maxMines: 5, maxBarracks: 2, maxTowers: 1,
-    wavePop: 23, waveCd: 35, waveMax: 33, retreat: true,
+    wavePop: 40, waveCd: 72, waveMax: 55, retreat: true,
     weights: { infantry: 0.55, archer: 0.3, heavy: 0.15 }, think: 0.55,
   },
   hard: {
     // 困难档对参数极度敏感：incomeMult 每加 0.05、waveCd 每减 4 都要重新跑批
-    label: '困难', incomeMult: 1.0, maxMines: 6, maxBarracks: 3, maxTowers: 2,
-    wavePop: 25, waveCd: 34, waveMax: 40, retreat: true,
+    label: '困难', incomeMult: 1.03, maxMines: 6, maxBarracks: 3, maxTowers: 2,
+    wavePop: 45, waveCd: 65, waveMax: 65, retreat: true,
     weights: { infantry: 0.45, archer: 0.3, heavy: 0.25 }, think: 0.5,
   },
 };

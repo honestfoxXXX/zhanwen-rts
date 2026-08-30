@@ -35,7 +35,8 @@ if (process.env.ZW_NO_COUNTER === '1') {
 const P_BARRACKS: [number, number][] = [[160, 140], [-160, 140], [160, 260]];
 const P_TOWERS: [number, number][] = [[80, 340], [-80, 340]];
 const P_MAX_MINES = 6;
-const P_WAVE_POP = 18;
+// 三人图的贴身消耗战里兵力攒不起来，脚本玩家的出击门槛也要跟着人数走
+const P_WAVE_POP = forcedPlayers === 3 ? 12 : 30;
 
 function playerThink(w: World): void {
   const side = 0 as const;

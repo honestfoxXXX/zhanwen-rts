@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, DIFFICULTY, MAP_H, UNIT_DEFS } from './config';
+import { BUILDING_DEFS, DIFFICULTY, MAP_H, POP_CAP, UNIT_DEFS } from './config';
 import { canPlace, findBuildSlot, issueCommand, pushEvent } from './sim';
 import { rngNext } from './rng';
 import type { Building, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
@@ -133,14 +133,27 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
   // 三方局里两个 AI 互相消耗、都未必优先打玩家，需要更高上限才能形成真正的夹击压力
-  const scale = w.players === 3 ? 0.75 : 1;
+  const scale = w.players === 3 ? 0.85 : 1;
+  // 波次门槛单独缩放：三方图的矿点与集结点互相贴脸，开局即低烈度消耗战，
+  // 兵力永远攒不到大波门槛 → 全员被动到超时。门槛必须压到消耗战均衡（~6-8 人口）
+  // 之下，让持续小股袭扰驱动经济雪球，绞肉机才滚得出胜负。
+  // 简单档 AI 经济太弱（0.75×0.8），更小的门槛也打不动谁、反而全员饿死成超时，
+  // 所以简单档的门槛/密度缩放放宽一档，让两个弱 AI 之间也分得出胜负。
+  const waveScale = w.players === 3 ? (w.difficulty === 'easy' ? 0.45 : 0.25) : 1;
+  // 三人局的袭扰间隔也要缩短：矿场 100 水晶 / 25 秒回本，60 秒一波的劫掠
+  // 赶不上重建速度，经济均衡永远破不了 —— 密度必须压过重建。
+  const cdScale = w.players === 3 ? (w.difficulty === 'easy' ? 0.75 : 0.6) : 1;
   const maxMines = Math.round(d.maxMines * scale);
   const maxBarracks = Math.round(d.maxBarracks * scale);
   const maxTowers = Math.round(d.maxTowers * scale);
-  const wavePop = d.wavePop * scale;
+  const wavePop = d.wavePop * waveScale;
 
-  // —— 家里进了敌人（任意他方）→ 回防
-  const threats = w.units.filter(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 300));
+  // —— 家里进了敌人（任意他方）→ 回防。
+  // 威胁半径在三人图收紧：三角几何下各家前哨矿与邻居的集结部队相距 ~220-300，
+  // 用 1v1 的 300 会让邻居的常备兵力永远算作"来犯之敌"，三方全部锁死在防御态、
+  // 波次永不触发、全员对峙到超时。只有真正踩到建筑（<180）才算入侵。
+  const homeR = w.players === 3 ? 180 : 300;
+  const threats = w.units.filter(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < homeR));
   if (threats.length) {
     st.defending = true;
     // 守家不等于龟缩：来犯之敌明显少于己方兵力时顺势反打，
@@ -153,7 +166,7 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
       orderArmy(w, side, army, threats[0].x, threats[0].y);
     }
   } else if (st.defending) {
-    const still = w.units.some(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < 340));
+    const still = w.units.some(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < homeR + 40));
     if (!still) {
       st.defending = false;
       st.attacking = false;
@@ -187,7 +200,7 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     const ud = UNIT_DEFS[t];
     // 矿没铺满时给扩张留足预算，避免造兵把经济钱吃光
     const reserve = freeNodes.length && mines.length < maxMines ? BUILDING_DEFS.mine.cost : 0;
-    if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= 40) {
+    if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= POP_CAP) {
       issueCommand(w, { type: 'train', side, unit: t });
     }
   }
@@ -209,7 +222,7 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     if (nowHp < st.waveStart * 0.35 || armyPop === 0 || expired) {
       st.attacking = false;
       st.goal = null;
-      st.waveCd = d.waveCd;
+      st.waveCd = d.waveCd * cdScale;
       if (d.retreat && armyPop > 0) {
         const spot = retreatSpot(w, side);
         orderArmy(w, side, army, spot.x, spot.y);
