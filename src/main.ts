@@ -186,7 +186,7 @@ function triggerAlert(x: number, y: number, building: boolean): void {
   if (now - alertCd[key] < (building ? 3 : 6)) return;
   alertCd[key] = now;
   alert = { x, y, building, life: 2.4 };
-  hud.showAlert(building ? '⚠ 我方建筑遇袭' : '⚠ 部队遭遇敌军');
+  hud.showAlert(building ? '⚠ 城堡遇袭' : '⚠ 部队遭遇敌军');
   play('alarm');
 }
 
@@ -262,14 +262,14 @@ function drainEvents(): void {
         play('move');
         break;
       case 'wave':
-        hud.toast('⚠ 敌军大举进攻！');
+        hud.toast('⚠ 敌军大举来犯！');
         play('alarm');
         break;
       case 'eliminated':
         // 我方被灭由结算处理；这里只报敌方出局，给玩家"局势推进"的反馈
         if (e.side !== 0 && world.alive) {
           const remain = world.alive.filter(Boolean).length;
-          hud.toast(`敌军一部被歼灭，还剩 ${remain} 方`);
+          hud.toast(`敌一支军团覆灭，还剩 ${remain} 方`);
         }
         break;
       case 'denied':

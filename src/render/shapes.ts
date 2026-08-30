@@ -16,14 +16,14 @@ import type { BuildingType, Side, UnitType } from '../core/types';
  */
 
 /**
- * 三方配色：我方青、敌方玫红、第三方橙。
- * 橙色与"水晶紫 / 前线琥珀 / 选中薄荷绿"都能拉开距离，不会抢语义色。
+ * 纹章三原色：天蓝（Azure）/ 绯红（Gules）/ 金（Or），即蓝衫军 / 红衫军 / 金衫军。
+ * 金衫军与"黄金资源色"的区分：资源与提示统一用奶白金（#f5ecd2 系），琥珀金只归阵营。
  * 全项目只有这一处定义阵营色，其它模块一律从这里引入，避免各处颜色对不上。
  */
-export const SIDE_FILL = ['#22d3ee', '#fb7185', '#fb923c'];
-export const SIDE_DARK = ['#155e75', '#9f1239', '#9a3412'];
-export const SIDE_RING = ['rgba(34,211,238,0.7)', 'rgba(251,113,133,0.7)', 'rgba(251,146,60,0.7)'];
-export const SIDE_DIM = ['rgba(34,211,238,0.14)', 'rgba(251,113,133,0.14)', 'rgba(251,146,60,0.14)'];
+export const SIDE_FILL = ['#5b8dd6', '#d64545', '#dfa53b'];
+export const SIDE_DARK = ['#1e3a5f', '#6b1f1f', '#8a5a10'];
+export const SIDE_RING = ['rgba(91,141,214,0.7)', 'rgba(214,69,69,0.7)', 'rgba(223,165,59,0.7)'];
+export const SIDE_DIM = ['rgba(91,141,214,0.16)', 'rgba(214,69,69,0.16)', 'rgba(223,165,59,0.16)'];
 
 type ShapeKind = 'circle' | 'arrow' | 'hex';
 type EmblemKind = 'dot' | 'ring' | 'plates';

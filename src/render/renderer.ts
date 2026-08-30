@@ -10,19 +10,19 @@ import { drawUnitBody, SIDE_DARK, SIDE_DIM, SIDE_FILL } from './shapes';
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
 const SIDE = SIDE_FILL;
 const C = {
-  groundA: '#0c1728',
-  groundB: '#0e1a2e',
-  grid: 'rgba(148,163,184,0.05)',
-  rock: '#22334d',
-  rockEdge: '#3b5273',
-  line: 'rgba(245,158,11,0.45)',
-  crystal: '#c084fc',
-  select: '#6ee7b7',
+  groundA: '#38512e',
+  groundB: '#2a3f24',
+  grid: 'rgba(240,228,200,0.04)',
+  rock: '#6d6a63',
+  rockEdge: '#57544d',
+  line: 'rgba(201,162,39,0.5)',
+  crystal: '#f0c24e',
+  select: '#f5ecd2',
   hpBack: 'rgba(2,6,16,0.7)',
-  ghostOk: 'rgba(52,211,153,0.30)',
-  ghostOkEdge: 'rgba(52,211,153,0.9)',
-  ghostBad: 'rgba(248,113,113,0.30)',
-  ghostBadEdge: 'rgba(248,113,113,0.9)',
+  ghostOk: 'rgba(232,226,196,0.30)',
+  ghostOkEdge: 'rgba(232,226,196,0.9)',
+  ghostBad: 'rgba(214,69,69,0.30)',
+  ghostBadEdge: 'rgba(214,69,69,0.9)',
 };
 
 export type GhostInfo = { type: Building['type']; x: number; y: number; valid: boolean } | null
@@ -36,23 +36,23 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   c.height = MAP_H;
   const g = c.getContext('2d') as CanvasRenderingContext2D;
 
-  // 基底：垂直光照渐变（北亮南暗）替代棋盘格，棋盘格是"调试感"的最大来源
+  // 基底：垂直光照渐变（北亮南暗），苔绿草原
   const base = g.createLinearGradient(0, 0, 0, MAP_H);
-  base.addColorStop(0, '#122238');
-  base.addColorStop(0.45, '#0d1a2c');
-  base.addColorStop(1, '#091320');
+  base.addColorStop(0, '#3d5732');
+  base.addColorStop(0.45, '#33492b');
+  base.addColorStop(1, '#2a3f24');
   g.fillStyle = base;
   g.fillRect(0, 0, MAP_W, MAP_H);
   // 半场淡染色（只属于 1v1 的上下对峙；三方是等距三角，没有"前线"概念）
   if (map.players === 2) {
-    g.fillStyle = 'rgba(251,113,133,0.035)';
+    g.fillStyle = 'rgba(214,69,69,0.035)';
     g.fillRect(0, 0, MAP_W, MAP_H / 2);
-    g.fillStyle = 'rgba(34,211,238,0.035)';
+    g.fillStyle = 'rgba(91,141,214,0.035)';
     g.fillRect(0, MAP_H / 2, MAP_W, MAP_H / 2);
   }
 
   // 网格：保留但压到几乎不可见，只作对位参考
-  g.strokeStyle = 'rgba(148,163,184,0.035)';
+  g.strokeStyle = 'rgba(240,228,200,0.03)';
   g.lineWidth = 1;
   g.beginPath();
   for (let cx = 0; cx <= COLS; cx++) { g.moveTo(cx * TILE, 0); g.lineTo(cx * TILE, MAP_H); }
@@ -62,12 +62,12 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   // ---- 确定性地面装饰（大块色斑 / 暗斑 / 苔痕 / 草茎 / 碎石）----
   let seed = 20260830;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  // 大块色斑：两种色相（苔青 / 靛蓝），让地面有"地貌"而非纯色
+  // 大块色斑：两种色相（草甸 / 褐土），让地面有"地貌"而非纯色
   for (let i = 0; i < 34; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 40 + rnd() * 90;
     g.fillStyle = i % 2 === 0
-      ? `rgba(45,212,191,${0.022 + rnd() * 0.03})`
-      : `rgba(99,132,255,${0.02 + rnd() * 0.028})`;
+      ? `rgba(122,158,78,${0.04 + rnd() * 0.03})`
+      : `rgba(122,88,52,${0.055 + rnd() * 0.03})`;
     g.beginPath();
     g.ellipse(x, y, r, r * (0.5 + rnd() * 0.3), rnd() * Math.PI, 0, Math.PI * 2);
     g.fill();
@@ -81,7 +81,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
   // 草茎
-  g.strokeStyle = 'rgba(94,234,212,0.11)';
+  g.strokeStyle = 'rgba(150,190,100,0.13)';
   g.lineWidth = 1.4;
   for (let i = 0; i < 170; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H;
@@ -94,7 +94,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   // 碎石点
   for (let i = 0; i < 300; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 0.8 + rnd() * 1.6;
-    g.fillStyle = `rgba(148,163,184,${0.05 + rnd() * 0.09})`;
+    g.fillStyle = `rgba(210,200,178,${0.05 + rnd() * 0.09})`;
     g.beginPath();
     g.arc(x, y, r, 0, Math.PI * 2);
     g.fill();
@@ -110,7 +110,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.lineTo(MAP_W, MAP_H / 2);
     g.stroke();
     g.setLineDash([]);
-    g.fillStyle = 'rgba(245,158,11,0.4)';
+    g.fillStyle = 'rgba(201,162,39,0.4)';
     for (let x = 26; x < MAP_W; x += 64) {
       g.beginPath();
       g.moveTo(x, MAP_H / 2 - 5);
@@ -119,7 +119,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
       g.closePath();
       g.fill();
     }
-    g.fillStyle = 'rgba(245,158,11,0.55)';
+    g.fillStyle = 'rgba(201,162,39,0.55)';
     g.font = '600 13px sans-serif';
     g.textAlign = 'center';
     g.fillText('—— 前 线 ——', MAP_W / 2, MAP_H / 2 - 10);
@@ -133,7 +133,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.arc(tcx, tcy, 34, 0, Math.PI * 2);
     g.stroke();
     g.setLineDash([]);
-    g.fillStyle = 'rgba(245,158,11,0.55)';
+    g.fillStyle = 'rgba(201,162,39,0.55)';
     g.font = '600 12px sans-serif';
     g.textAlign = 'center';
     g.fillText('必 争 之 地', tcx, tcy - 44);
@@ -169,7 +169,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.closePath();
     g.fill();
     // 受光面（左上）
-    g.fillStyle = 'rgba(148,180,222,0.20)';
+    g.fillStyle = 'rgba(205,203,195,0.22)';
     g.beginPath();
     g.moveTo(x + 4, y + 15);
     g.lineTo(x + 12, y + 5);
@@ -178,7 +178,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.closePath();
     g.fill();
     // 裂纹
-    g.strokeStyle = 'rgba(6,12,22,0.55)';
+    g.strokeStyle = 'rgba(48,44,36,0.55)';
     g.lineWidth = 1.2;
     g.beginPath();
     g.moveTo(x + 14, y + 12);
@@ -217,8 +217,8 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     [MAP_W - shade, 0, MAP_W, 0, 0, MAP_H, false],
   ] as [number, number, number, number, number, number, boolean][]) {
     const gr = g.createLinearGradient(x0, y0, x1, y1);
-    gr.addColorStop(0, 'rgba(3,7,15,0.42)');
-    gr.addColorStop(1, 'rgba(3,7,15,0)');
+    gr.addColorStop(0, 'rgba(12,9,4,0.42)');
+    gr.addColorStop(1, 'rgba(12,9,4,0)');
     g.fillStyle = gr;
     g.fillRect(hor ? 0 : Math.min(x0, x1), hor ? Math.min(y0, y1) : 0, hor ? MAP_W : shade, hor ? shade : MAP_H);
   }
@@ -279,12 +279,12 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.save();
     ctx.translate(n.x, n.y + float);
     // 地面光晕
-    ctx.fillStyle = 'rgba(192,132,252,0.10)';
+    ctx.fillStyle = 'rgba(240,194,78,0.12)';
     ctx.beginPath();
     ctx.ellipse(0, 8, 14, 5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.scale(pulse, pulse);
-    ctx.shadowColor = 'rgba(192,132,252,0.8)';
+    ctx.shadowColor = 'rgba(240,194,78,0.8)';
     ctx.shadowBlur = 14;
     ctx.fillStyle = C.crystal;
     diamond(ctx, 0, 0, 12);
@@ -299,8 +299,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   // 集结点（玩家）
   const r0 = w.rally[0];
   ctx.save();
-  ctx.strokeStyle = 'rgba(251,191,36,0.75)';
-  ctx.fillStyle = 'rgba(251,191,36,0.75)';
+  ctx.strokeStyle = 'rgba(201,162,39,0.8)';
+  ctx.fillStyle = 'rgba(201,162,39,0.8)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(r0.x, r0.y, 5, 0, Math.PI * 2);
@@ -398,7 +398,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.fillRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
     ctx.strokeRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
     ctx.globalAlpha = 0.85;
-    ctx.fillStyle = gh.valid ? '#6ee7b7' : '#fca5a5';
+    ctx.fillStyle = gh.valid ? '#f5ecd2' : '#f0a3a3';
     ctx.font = '600 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(BUILDING_DEFS[gh.type].name, gh.x, gh.y + 4);
@@ -429,7 +429,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     const { x0, y0, x1, y1 } = ui.boxRect;
     ctx.save();
     ctx.strokeStyle = C.select;
-    ctx.fillStyle = 'rgba(110,231,183,0.12)';
+    ctx.fillStyle = 'rgba(245,236,210,0.12)';
     ctx.lineWidth = 1.5;
     const x = Math.min(x0, x1), y = Math.min(y0, y1);
     ctx.fillRect(x, y, Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -576,13 +576,13 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
       }
       case 'mine': {
         // 晶簇下的岩基：矿场是"从地里挖出来"的，不是浮在空中的图标
-        ctx.fillStyle = 'rgba(10,18,30,0.72)';
+        ctx.fillStyle = 'rgba(30,24,12,0.72)';
         ctx.beginPath();
         ctx.ellipse(0, 9, 17, 6, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.save();
         ctx.translate(0, -3);
-        ctx.shadowColor = 'rgba(192,132,252,0.6)';
+        ctx.shadowColor = 'rgba(240,194,78,0.6)';
         ctx.shadowBlur = 8;
         // 三根晶柱：此前与主基地一样是单个大菱形，远距离几乎分不出来
         for (const [cx, cy, r] of [[0, -2, 13], [-10, 5, 9], [10, 5, 9]] as const) {

@@ -23,9 +23,9 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
-  hq: { name: '主基地', cost: 0, hp: 1400, buildTime: 0, half: 40, income: 5, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
-  mine: { name: '矿场', cost: 100, hp: 220, buildTime: 5, half: 40, income: 5, weapon: null },
-  barracks: { name: '兵营', cost: 150, hp: 450, buildTime: 8, half: 40, income: 0, weapon: null },
+  hq: { name: '城堡', cost: 0, hp: 1400, buildTime: 0, half: 40, income: 5, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
+  mine: { name: '金矿', cost: 100, hp: 220, buildTime: 5, half: 40, income: 5, weapon: null },
+  barracks: { name: '军营', cost: 150, hp: 450, buildTime: 8, half: 40, income: 0, weapon: null },
   tower: { name: '箭塔', cost: 120, hp: 340, buildTime: 6, half: 40, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
 };
 

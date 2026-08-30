@@ -81,7 +81,7 @@ export class Effects {
   }
 
   mark(x: number, y: number): void {
-    this.add({ kind: 'mark', x, y, dur: 0.5, r: 10, color: '#34d399', big: false, vx: 0, vy: 0 });
+    this.add({ kind: 'mark', x, y, dur: 0.5, r: 10, color: '#c9a227', big: false, vx: 0, vy: 0 });
   }
 
   builtEvent(x: number, y: number, side: Side): void {

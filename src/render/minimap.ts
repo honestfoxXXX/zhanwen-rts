@@ -48,10 +48,10 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   g.save();
   // 面板
   g.globalAlpha = 0.9;
-  g.fillStyle = 'rgba(2,6,16,0.78)';
+  g.fillStyle = 'rgba(26,18,8,0.82)';
   roundRect(g, r.x, r.y, r.w, r.h, 6);
   g.fill();
-  g.strokeStyle = 'rgba(148,163,184,0.3)';
+  g.strokeStyle = 'rgba(201,162,39,0.35)';
   g.lineWidth = 1;
   roundRect(g, r.x, r.y, r.w, r.h, 6);
   g.stroke();
@@ -59,7 +59,7 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
 
   // 1v1 画前线；三方图标出等距质心
   const map = currentMap();
-  g.strokeStyle = 'rgba(245,158,11,0.5)';
+  g.strokeStyle = 'rgba(201,162,39,0.55)';
   if (map.players === 2) {
     g.beginPath();
     g.moveTo(r.x + 2, r.y + (MAP_H / 2) * sy);
@@ -74,14 +74,14 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   }
 
   // 岩石地形：雷达上能看出"哪里绕得过去"
-  g.fillStyle = 'rgba(58,82,114,0.95)';
+  g.fillStyle = '#6d6a63';
   const rw = Math.max(1.6, TILE * sx), rh = Math.max(1.6, TILE * sy);
   for (const [cx, cy] of currentMap().rocks) {
     g.fillRect(r.x + cx * TILE * sx, r.y + cy * TILE * sy, rw, rh);
   }
 
-  // 水晶矿点
-  g.fillStyle = '#c084fc';
+  // 金矿脉矿点
+  g.fillStyle = '#f0c24e';
   for (const n of world.nodes) {
     if (n.mineId !== null) continue;
     g.fillRect(r.x + n.x * sx - 1.5, r.y + n.y * sy - 1.5, 3, 3);
@@ -100,7 +100,7 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   }
 
   // 当前视野框
-  g.strokeStyle = 'rgba(226,232,240,0.85)';
+  g.strokeStyle = 'rgba(239,228,200,0.85)';
   g.lineWidth = 1;
   g.strokeRect(
     r.x + 1,

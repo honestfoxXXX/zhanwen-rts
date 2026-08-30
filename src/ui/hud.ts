@@ -4,16 +4,16 @@ import type { UIState } from '../input/input';
 import { drawIcon, SIDE_FILL } from '../render/shapes';
 
 const DENY_TEXT: Record<string, string> = {
-  cost: '水晶不足',
+  cost: '黄金不足',
   pop: '人口已满',
-  nobarracks: '需要先建兵营',
+  nobarracks: '需要先建军营',
   place: '无法在此建造',
-  nonode: '附近没有空闲矿点',
+  nonode: '附近没有空闲金矿',
   queue: '排队已满',
 };
 
 /** 阵营中文名，结算战报用 */
-const SIDE_LABEL = ['我方', '敌方甲', '敌方乙'];
+const SIDE_LABEL = ['蓝衫军', '红衫军', '金衫军'];
 
 export interface HudHooks {
   start: (d: Difficulty, players: number) => void;
@@ -141,7 +141,7 @@ export class Hud {
     for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}阵亡`, String(st.kills[s])]);
     rows.push(['累计造兵', String(st.trained[0])]);
     rows.push([`峰值兵力`, `${st.peakPop[0]}/${POP_CAP}`]);
-    rows.push(['水晶总收入', String(Math.round(st.earned[0]))]);
+    rows.push(['黄金总收入', String(Math.round(st.earned[0]))]);
     for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}总收入`, String(Math.round(st.earned[s]))]);
     this.els.resultDetail.textContent = '';
     for (const [k, v] of rows) {
@@ -291,13 +291,13 @@ export class Hud {
   /** 动态目标：告诉玩家这会儿该干什么，而不是只给一次性的静态提示 */
   private goalText(world: World): string {
     const own = world.buildings.filter(b => b.side === 0 && !b.dead);
-    if (!own.some(b => b.type === 'barracks')) return '目标：先建一座兵营';
-    if (own.filter(b => b.type === 'mine').length < 2) return '目标：占水晶矿建矿场 —— 收入就是兵力';
+    if (!own.some(b => b.type === 'barracks')) return '目标：先建一座军营';
+    if (own.filter(b => b.type === 'mine').length < 2) return '目标：占一处金矿 —— 黄金就是兵力';
     if (world.popUsed[0] < 12) return `目标：攒兵 ${world.popUsed[0]}/12`;
     const foes = world.alive.filter(Boolean).length - 1;
     return world.players > 2
-      ? `目标：进军，消灭剩余 ${foes} 个敌方主基地`
-      : '目标：进军，摧毁敌方主基地';
+      ? `目标：进军，扫平剩余 ${foes} 座城堡`
+      : '目标：进军，摧毁敌方城堡';
   }
 
   /** 造兵队列剩余时长：排队总时长 + 正在训练的兵营里最久的那个 */
