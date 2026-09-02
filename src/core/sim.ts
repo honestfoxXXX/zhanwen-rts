@@ -105,14 +105,12 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     popUsed: new Array(players).fill(0),
     income: new Array(players).fill(0),
     queue: Array.from({ length: players }, () => [] as UnitType[]),
-    // 默认集结点：按出生位置推导。1v1 是「位置规则」—— 南侧（纵深最深）出生点前压 560，
-    // 北侧贴基地 180，让主力在深方半场碰撞（对称集结点会把碰撞线推向玩家，普通档会从 ~80% 塌到 0）。
-    // 三方是等边三角、三方完全等价，集结距离也必须一致：贴家 120 —— 三方图的矿线互相贴脸，
-    // 集结在前线只会让新兵进门就被绞死、谁也攒不出攻城的拳头；在家门口集结才能攒出波次。
-    rally: map.spawns.map((s, i) => {
+    // 默认集结点：从出生点朝地图质心方向收拢，双轴通用（对角 / 三角布局都成立）。
+    // 距离按人数区分：1v1 320 让双方主力在中路对角线碰撞，3 人 240 贴家攒兵。
+    rally: map.spawns.map(s => {
       const dx = midX - s.pos.x, dy = midY - s.pos.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const off = players === 3 ? 120 : (i === 0 ? 560 : 180);
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const off = players === 3 ? 240 : 320;
       return { x: s.pos.x + (dx / len) * off, y: s.pos.y + (dy / len) * off };
     }),
     blocked,

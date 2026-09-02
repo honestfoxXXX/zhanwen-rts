@@ -47,12 +47,14 @@ describe('固守与撤退', () => {
     expect(a.y).toBeGreaterThan(1010); // 向敌人推进了
   });
 
-  it('撤退令让部队撤回己方主基地', () => {
+  it('撤退令让部队撤回己方城堡', () => {
     const w = createWorld('normal', 9);
-    const u = mk(w, 1, 0, 'infantry', 360, 600);
+    const u = mk(w, 1, 0, 'infantry', 400, 3000);
     expect(issueCommand(w, { type: 'retreat', side: 0, ids: [1] })).toBe(true);
     run(w, 30);
-    expect(u.y).toBeGreaterThan(1450); // 玩家主基地在 (360,1640)
+    const home = w.spawns[0];
+    const dx = u.x - home.x, dy = u.y - home.y;
+    expect(Math.sqrt(dx * dx + dy * dy)).toBeLessThan(80); // 抵达己方城堡
     expect(u.order.kind).toBe('idle'); // 抵达后转为待命
   });
 });
@@ -72,7 +74,8 @@ describe('兵种克制', () => {
 
   it('克制加成不对建筑生效', () => {
     const w = createWorld('normal', 6);
-    mk(w, 1, 0, 'archer', 360, 400);
+    // 敌方城堡在东北角 (3440,400)，把弓手放进其 aggro 内
+    mk(w, 1, 0, 'archer', 3440, 540);
     const hq = w.buildings.find(b => b.side === 1 && b.type === 'hq')!;
     const start = hq.hp;
     run(w, 3);
@@ -87,13 +90,13 @@ describe('集结点', () => {
   it('可以为单个兵营单独设置集结点，不影响全局集结点', () => {
     const w = createWorld('normal', 10);
     w.crystals[0] = 1000;
-    issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 240, y: 1200 });
+    issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 600, y: 3300 });
     run(w, 9);
     const b = w.buildings.find(v => v.side === 0 && v.type === 'barracks')!;
     expect(b).toBeDefined();
 
-    issueCommand(w, { type: 'rally', side: 0, x: 300, y: 1300, buildingId: b.id });
-    expect(b.rally).toEqual({ x: 300, y: 1300 });
-    expect(w.rally[0]).not.toEqual({ x: 300, y: 1300 });
+    issueCommand(w, { type: 'rally', side: 0, x: 800, y: 3100, buildingId: b.id });
+    expect(b.rally).toEqual({ x: 800, y: 3100 });
+    expect(w.rally[0]).not.toEqual({ x: 800, y: 3100 });
   });
 });

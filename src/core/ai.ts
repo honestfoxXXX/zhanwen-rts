@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, DIFFICULTY, MAP_H, POP_CAP, UNIT_DEFS } from './config';
+import { BUILDING_DEFS, DIFFICULTY, MAP_H, MAP_W, POP_CAP, UNIT_DEFS } from './config';
 import { canPlace, findBuildSlot, issueCommand, pushEvent } from './sim';
 import { rngNext } from './rng';
 import type { Building, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
@@ -40,20 +40,25 @@ function orderArmy(w: World, side: Side, army: Unit[], x: number, y: number): vo
   issueCommand(w, { type: 'move', side, ids: army.map(u => u.id), x, y });
 }
 
-/** 撤退集结点：主基地背后（远离地图中心的一侧），别退到敌人那边去 */
+/** 撤退集结点：沿「出生点背离地图质心」方向后撤，双轴通用（对角 / 三角都成立） */
 function retreatSpot(w: World, side: Side): Vec {
   const home = w.spawns[side];
-  const dy = home.y < MAP_H / 2 ? -160 : 160;
-  return { x: home.x, y: Math.max(60, Math.min(MAP_H - 60, home.y + dy)) };
+  const dx = home.x - MAP_W / 2, dy = home.y - MAP_H / 2;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const x = Math.max(60, Math.min(MAP_W - 60, home.x + (dx / len) * 160));
+  const y = Math.max(60, Math.min(MAP_H - 60, home.y + (dy / len) * 160));
+  return { x, y };
 }
 
-/** 下一个要占的矿点：有基本盘后优先抢中路（价值最高、多方都能建） */
+/** 下一个要占的矿点：有基本盘后优先抢「比自家更靠近质心」的矿（中路价值最高） */
 function nextNode(w: World, hq: Building, mineCount: number): CrystalNode | null {
   const free = w.nodes.filter(n => n.mineId === null);
   if (!free.length) return null;
   let pool = free;
   if (mineCount >= 2) {
-    const mid = free.filter(n => n.y > 780 && n.y < 1140);
+    const cx = MAP_W / 2, cy = MAP_H / 2;
+    const myCenterD = dist2(hq.x, hq.y, cx, cy);
+    const mid = free.filter(n => dist2(n.x, n.y, cx, cy) < myCenterD);
     if (mid.length) pool = mid;
   }
   let best = pool[0], bd = Infinity;

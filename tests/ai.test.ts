@@ -23,14 +23,16 @@ describe('AI', () => {
     expect(army.length).toBeGreaterThan(0);
   });
 
-  it('AI 会发起波次进攻（向玩家半场推进）', () => {
+  it('AI 会发起波次进攻（向玩家城堡推进）', () => {
     const w = createWorld('normal', 11);
     let sawWave = false;
+    const p0 = w.spawns[0];
     const steps = 300 * 60; // 5 分钟
     for (let i = 0; i < steps && !w.gameOver; i++) {
       stepWorld(w, 1 / 60);
       if (i % 30 === 0) {
-        const marching = w.units.some(u => u.side === 1 && u.order.kind === 'move' && u.order.y > 900);
+        const marching = w.units.some(u => u.side === 1 && u.order.kind === 'move' &&
+          Math.hypot(u.order.x - p0.x, u.order.y - p0.y) < 800);
         if (marching) sawWave = true;
       }
     }
@@ -49,13 +51,13 @@ describe('AI', () => {
 
   it('AI 在家被打时会回防（防守标记生效）', () => {
     const w = createWorld('normal', 5);
-    // 在 AI 基地旁放一个玩家步兵
+    // 在 AI 基地旁放一个玩家步兵（AI 城堡在东北角 (3440,400)）
     (w as unknown as { nextId: number }).nextId = 900;
     w.units.push({
       id: 900, side: 0, type: 'infantry',
-      x: 360, y: 300, hp: 75, maxHp: 75, cd: 0, facing: 0,
+      x: 3440, y: 520, hp: 75, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' }, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 360, lastY: 300, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 3440, lastY: 520, dead: false,
     });
     const steps = 10 * 60;
     for (let i = 0; i < steps; i++) {

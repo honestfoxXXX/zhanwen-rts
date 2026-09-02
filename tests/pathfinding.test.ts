@@ -14,34 +14,34 @@ describe('pathfinding', () => {
 
   it('主基地格被标记为阻挡', () => {
     const w = createWorld('normal', 1);
-    // HQ 位于 (360,1640) / (360,280)，覆盖 tile cols 8,9 × rows 40,41 / rows 6,7
-    expect(isBlockedTile(w.blocked, 8, 41)).toBe(true);
-    expect(isBlockedTile(w.blocked, 8, 7)).toBe(true);
+    // 对角出生：玩家 HQ (400,3440) 覆盖 tile 9,10 × 85,86；敌方 (3440,400) 覆盖 85,86 × 9,10
+    expect(isBlockedTile(w.blocked, 9, 86)).toBe(true);
+    expect(isBlockedTile(w.blocked, 86, 9)).toBe(true);
   });
 
-  it('能绕过中央关口找到从玩家到敌方的路径', () => {
+  it('能跨越整张对角地图找到从玩家到敌方的路径', () => {
     const w = createWorld('normal', 1);
-    const p = findPath(w.blocked, 360, 1760, 360, 240);
+    const p = findPath(w.blocked, 400, 3400, 3440, 400);
     expect(p).not.toBeNull();
     expect(p!.length).toBeGreaterThan(2);
     const last = p![p!.length - 1];
-    expect(Math.hypot(last.x - 360, last.y - 240)).toBeLessThan(TILE * 2);
+    expect(Math.hypot(last.x - 3440, last.y - 400)).toBeLessThan(TILE * 2);
     // 路径点不能踩在阻挡格上
     for (const pt of p!) {
       expect(isBlockedTile(w.blocked, Math.floor(pt.x / TILE), Math.floor(pt.y / TILE))).toBe(false);
     }
   });
 
-  it('直线穿关口会被判定阻挡', () => {
+  it('直线穿中央隘口会被判定阻挡', () => {
     const w = createWorld('normal', 1);
-    // 中央关口 cols 8,9 (x 320..400) × rows 23,24 (y 920..1000)
-    expect(lineClear(w.blocked, 360, 880, 360, 1060)).toBe(false);
-    expect(lineClear(w.blocked, 60, 880, 60, 1060)).toBe(true);
+    // 中央隘口岩石 tile 45,46 → 世界 (1800..1880)
+    expect(lineClear(w.blocked, 1780, 1780, 2060, 2060)).toBe(false);
+    expect(lineClear(w.blocked, 1000, 1780, 1000, 2060)).toBe(true);
   });
 
   it('nearestFreeTile 返回可用格', () => {
     const w = createWorld('normal', 1);
-    const t = nearestFreeTile(w.blocked, 8, 24); // 关口内部
+    const t = nearestFreeTile(w.blocked, 45, 45); // 隘口岩石内部
     expect(t).not.toBeNull();
     expect(isBlockedTile(w.blocked, t![0], t![1])).toBe(false);
   });
@@ -50,6 +50,6 @@ describe('pathfinding', () => {
     const w = createWorld('normal', 1);
     expect(isBlockedTile(w.blocked, -1, 0)).toBe(true);
     expect(isBlockedTile(w.blocked, 0, MAP_H)).toBe(true);
-    expect(findPath(w.blocked, MAP_W + 500, 500, 360, 1200)).toBeNull();
+    expect(findPath(w.blocked, MAP_W + 500, 500, 1920, 1920)).toBeNull();
   });
 });

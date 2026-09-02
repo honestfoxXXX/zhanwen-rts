@@ -46,24 +46,22 @@ describe('economy', () => {
     expect(issueCommand(w, { type: 'build', side: 0, building: 'mine', x: node.x, y: node.y })).toBe(false);
   });
 
-  it('建筑只能在己方半场建造', () => {
+  it('建筑只能在己方建造区建造（对角图：自家角可建，敌方角不可建）', () => {
     w.crystals[0] = 1000;
-    // 敌方半场 (320, 320)
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 360, y: 320 })).toBe(false);
-    // 己方半场 (320, 900)
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 360, y: 1100 })).toBe(true);
+    // 敌方东北角
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 3300, y: 600 })).toBe(false);
+    // 己方西南角
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 600, y: 3300 })).toBe(true);
   });
 
-  // 守护回归：旧代码的边界是 19/17，双方实际都停在 y=720，
-  // 玩家因此能越线 240 建造、可建纵深比敌方多 440
-  it('双方的建造范围关于中线对称，谁都不能越线', () => {
+  // 守护回归：双方建造区关于地图中心点对称（对角出生），谁也不能盖到别人家里
+  it('双方的建造区点对称，谁都不能越界到对方角落', () => {
     w.crystals[0] = 5000;
     w.crystals[1] = 5000;
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 280, y: 800 })).toBe(false);
-    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 280, y: 1120 })).toBe(false);
-    // 各自贴住中线的一侧都应可建（玩家 y>=1000，敌方 y<=920）
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 280, y: 1000 })).toBe(true);
-    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 280, y: 920 })).toBe(true);
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 600, y: 3300 })).toBe(true);
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 3300, y: 600 })).toBe(false);
+    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 3300, y: 600 })).toBe(true);
+    expect(issueCommand(w, { type: 'build', side: 1, building: 'barracks', x: 600, y: 3300 })).toBe(false);
   });
 });
 
@@ -114,18 +112,19 @@ describe('combat', () => {
 
   it('箭塔自动攻击进入射程的敌人', () => {
     w.crystals[0] = 1000;
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'tower', x: 420, y: 1180 })).toBe(true);
+    // 己方建造区内贴家建塔（对角图西南角）
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'tower', x: 600, y: 3280 })).toBe(true);
     run(7); // 建成
     (w as unknown as { nextId: number }).nextId = 200;
     const u = {
       id: 200, side: 1 as const, type: 'infantry' as const,
-      x: 320, y: 1100, hp: UNIT_DEFS.infantry.hp, maxHp: UNIT_DEFS.infantry.hp,
+      x: 700, y: 3200, hp: UNIT_DEFS.infantry.hp, maxHp: UNIT_DEFS.infantry.hp,
       cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 320, lastY: 1100, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 700, lastY: 3200, dead: false,
     };
     w.units.push(u);
-    run(8); // 塔 dps 13，8s 足够吃掉 75hp（期间敌人会还手但打不动 340hp 的塔）
+    run(8); // 塔 dps 13，8s 足够吃掉 75hp（期间敌人会还手但打不动 520hp 的塔）
     expect(w.units.find(v => v.id === 200)).toBeUndefined();
   });
 
@@ -136,9 +135,9 @@ describe('combat', () => {
     (w as unknown as { nextId: number }).nextId = 300;
     const u = {
       id: 300, side: 0 as const, type: 'infantry' as const,
-      x: 360, y: 380, hp: 75, maxHp: 75, cd: 0, facing: 0,
+      x: 3440, y: 520, hp: 75, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 360, lastY: 380, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 3440, lastY: 520, dead: false,
     };
     w.units.push(u);
     run(3);
@@ -152,7 +151,7 @@ describe('production', () => {
     w.crystals[0] = 1000;
     // 没有兵营 → 拒绝
     expect(issueCommand(w, { type: 'train', side: 0, unit: 'infantry' })).toBe(false);
-    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 360, y: 1100 })).toBe(true);
+    expect(issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 600, y: 3300 })).toBe(true);
     run(9); // 建成 8s
     expect(issueCommand(w, { type: 'train', side: 0, unit: 'infantry' })).toBe(true);
     expect(w.queue[0]).toContain('infantry');
@@ -163,7 +162,7 @@ describe('production', () => {
 
   it('兵营被毁时退还排产费用', () => {
     w.crystals[0] = 1000;
-    issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 360, y: 1100 });
+    issueCommand(w, { type: 'build', side: 0, building: 'barracks', x: 600, y: 3300 });
     run(9);
     const before = w.crystals[0];
     issueCommand(w, { type: 'train', side: 0, unit: 'heavy' }); // 200

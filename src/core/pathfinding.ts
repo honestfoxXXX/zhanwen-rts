@@ -16,7 +16,7 @@ export function isBlockedTile(blocked: Uint8Array, cx: number, cy: number): bool
 /** 找最近的可用 tile（环形扩散） */
 export function nearestFreeTile(blocked: Uint8Array, cx: number, cy: number): [number, number] | null {
   if (!isBlockedTile(blocked, cx, cy)) return [cx, cy];
-  for (let r = 1; r <= 8; r++) {
+  for (let r = 1; r <= 10; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
@@ -102,7 +102,8 @@ export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number
 
   let found = false;
   let guard = 0;
-  while (heap.length && guard++ < 4000) {
+  const guardMax = Math.max(12000, (COLS * ROWS * 3) >> 1); // 大图 A* 上限随格数缩放
+  while (heap.length && guard++ < guardMax) {
     const cur = pop();
     if (closed[cur]) continue;
     closed[cur] = 1;
@@ -151,6 +152,7 @@ export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number
   }
 
   // 起点若在脚边则去掉
-  if (sm.length > 1 && Math.hypot(sm[0].x - x0, sm[0].y - y0) < TILE * 0.6) sm.shift();
+  const d0x = sm[0].x - x0, d0y = sm[0].y - y0;
+  if (sm.length > 1 && Math.sqrt(d0x * d0x + d0y * d0y) < TILE * 0.6) sm.shift();
   return sm.length ? sm : null;
 }
