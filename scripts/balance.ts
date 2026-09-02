@@ -34,9 +34,10 @@ if (process.env.ZW_NO_COUNTER === '1') {
  */
 const P_BARRACKS: [number, number][] = [[160, 140], [-160, 140], [160, 260]];
 const P_TOWERS: [number, number][] = [[80, 340], [-80, 340]];
-const P_MAX_MINES = 6;
-// 三人图的贴身消耗战里兵力攒不起来，脚本玩家的出击门槛也要跟着人数走
-const P_WAVE_POP = forcedPlayers === 3 ? 12 : 30;
+const P_MAX_MINES = 8;
+// 三人图的贴身消耗战里兵力攒不起来，脚本玩家的出击门槛也要跟着人数走；
+// 1v1 大图上防守方援军近在咫尺，半军出击就是送死 —— 要攒到接近满编
+const P_WAVE_POP = forcedPlayers === 3 ? 24 : 50;
 
 function playerThink(w: World): void {
   const side = 0 as const;
@@ -63,7 +64,7 @@ function playerThink(w: World): void {
   }
 
   // 兵营 / 箭塔（与 AI 同一套取位逻辑，按质心方位旋转）
-  if (barracksAll.length < 2 && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && mines.length >= 1) {
+  if (barracksAll.length < 3 && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && mines.length >= 1) {
     const slot = findBuildSlot(w, side, 'barracks', P_BARRACKS);
     if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot.x, y: slot.y });
   }
@@ -78,15 +79,24 @@ function playerThink(w: World): void {
     if (w.crystals[side] >= UNIT_DEFS[t].cost) issueCommand(w, { type: 'train', side, unit: t });
   }
 
-  // 出兵：攒够一波就平推离自己最近的敌方主基地（混战模式下有多个）
+  // 家园/矿线遇袭 → 全军回防拦截。这是普通玩家听到告警后的本能反应；
+  // 大图上不防守的玩家会被 AI 的经济袭扰活活磨死。
   const army = w.units.filter(u => u.side === side && !u.dead);
-  const pop = army.reduce((n, u) => n + UNIT_DEFS[u.type].pop, 0);
   const idle = army.filter(u => u.order.kind === 'idle');
-  if (pop >= P_WAVE_POP && idle.length >= 4) {
-    const foes = w.buildings.filter(b => b.side !== side && b.type === 'hq' && !b.dead);
-    if (foes.length) {
-      let best = foes[0], bd = Infinity;
-      for (const h of foes) {
+  const pop = army.reduce((n, u) => n + UNIT_DEFS[u.type].pop, 0);
+  const raiders = w.units.filter(u => u.side !== side && !u.dead &&
+    myB.some(b => Math.hypot(u.x - b.x, u.y - b.y) < 420));
+  if (raiders.length && army.length >= 6) {
+    issueCommand(w, { type: 'move', side, ids: army.map(u => u.id), x: raiders[0].x, y: raiders[0].y });
+  } else if (pop >= P_WAVE_POP && idle.length >= 4) {
+    // 出兵：大图上城堡有零距离援军，直冲主基地必被耗死 —— 像人一样先拆最近的
+    // 敌方矿断经济，矿拆光了再推家。攒到接近满编再动身。
+    const foeMines = w.buildings.filter(b => b.side !== side && b.type === 'mine' && !b.dead);
+    const foeHqs = w.buildings.filter(b => b.side !== side && b.type === 'hq' && !b.dead);
+    const targets = foeMines.length ? foeMines : foeHqs;
+    if (targets.length) {
+      let best = targets[0], bd = Infinity;
+      for (const h of targets) {
         const d = (h.x - hq.x) ** 2 + (h.y - hq.y) ** 2;
         if (d < bd) { bd = d; best = h; }
       }

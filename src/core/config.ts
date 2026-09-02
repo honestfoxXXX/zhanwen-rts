@@ -5,7 +5,7 @@ export const COLS = 96;
 export const ROWS = 96;
 export const MAP_W = COLS * TILE; // 3840 方形大图
 export const MAP_H = ROWS * TILE;
-export const POP_CAP = 50;
+export const POP_CAP = 80;
 export const START_CRYSTAL = 150;
 
 /**
@@ -16,9 +16,10 @@ export const START_CRYSTAL = 150;
  * 只影响单位互打，打建筑一律按基础伤害。
  */
 export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
-  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 60, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, dmgBonus: { archer: 1.5 } },
-  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 64, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, dmgBonus: { heavy: 1.6 } },
-  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 44, radius: 13, range: 14, aggro: 130, damage: 18, cooldown: 1.3, projectileSpeed: 0, dmgBonus: { infantry: 1.5 } },
+  // 速度为大图整体 ×1.4（相对速度与战斗配比不变，把行军时间缩回小图节奏）
+  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 84, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, dmgBonus: { archer: 1.5 } },
+  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 90, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, dmgBonus: { heavy: 1.6 } },
+  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 62, radius: 13, range: 14, aggro: 130, damage: 18, cooldown: 1.3, projectileSpeed: 0, dmgBonus: { infantry: 1.5 } },
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
@@ -245,20 +246,21 @@ export const DIFFICULTY: Record<Difficulty, {
   // 注意：建造区以中线 y=960 对称切分，AI 的整体数值要比「前压不对称」时期更高才能维持同等难度。
   easy: {
     label: '简单', incomeMult: 0.75, maxMines: 4, maxBarracks: 1, maxTowers: 1,
-    wavePop: 30, waveCd: 95, waveMax: 40, retreat: false,
+    wavePop: 30, waveCd: 95, waveMax: 75, retreat: false,
     weights: { infantry: 0.7, archer: 0.3, heavy: 0 }, think: 0.6,
   },
   // 三档必须是"单调更强"：收入更高、矿更多、兵营更多、出击更频繁。
-  // 曾经把困难的 waveCd 调得比普通还长，结果两档挤在一起、难度选择失去意义。
+  // 大图（96×96）上防守方有堡垒与零距离援军优势，进攻必须满编——AI 与人同理。
+  // waveMax 必须大于跨图行军时间（~55s，速度 ×1.4 后），否则波次半路超时收兵。
   normal: {
-    label: '普通', incomeMult: 0.99, maxMines: 5, maxBarracks: 2, maxTowers: 1,
-    wavePop: 40, waveCd: 72, waveMax: 55, retreat: true,
+    label: '普通', incomeMult: 1.0, maxMines: 6, maxBarracks: 2, maxTowers: 1,
+    wavePop: 40, waveCd: 72, waveMax: 95, retreat: true,
     weights: { infantry: 0.55, archer: 0.3, heavy: 0.15 }, think: 0.55,
   },
   hard: {
     // 困难档对参数极度敏感：incomeMult 每加 0.05、waveCd 每减 4 都要重新跑批
-    label: '困难', incomeMult: 1.03, maxMines: 6, maxBarracks: 3, maxTowers: 2,
-    wavePop: 45, waveCd: 65, waveMax: 65, retreat: true,
+    label: '困难', incomeMult: 1.05, maxMines: 6, maxBarracks: 3, maxTowers: 2,
+    wavePop: 45, waveCd: 60, waveMax: 105, retreat: true,
     weights: { infantry: 0.45, archer: 0.3, heavy: 0.25 }, think: 0.5,
   },
 };

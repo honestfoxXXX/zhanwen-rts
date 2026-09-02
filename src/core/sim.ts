@@ -595,9 +595,8 @@ function updateEconomy(w: World, dt: number): void {
     if (d.income) inc[b.side] += d.income;
   }
   // 难度倍率只作用于 AI（1 号及之后），玩家恒为 1.0。
-  // 三方混战里两个 AI 会互相消耗、且都不优先打玩家，导致 1v2 反而比 1v1 轻松，
-  // 所以 3 人局给 AI 额外加乘，让"被两方夹击"的压迫感成立。
-  const aiScale = w.players === 3 ? 0.8 : 1;
+  // 96×96 大三角上三方相距甚远，1v2 的压力主要来自两线作战本身，AI 经济不额外补偿。
+  const aiScale = 1;
   for (let s = 1; s < w.players; s++) inc[s] *= DIFFICULTY[w.difficulty].incomeMult * aiScale;
   w.income = inc;
   for (let s = 0; s < w.players; s++) {

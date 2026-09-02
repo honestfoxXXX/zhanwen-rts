@@ -137,17 +137,12 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   const towers = myB.filter(b => b.type === 'tower');
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
-  // 三方局里两个 AI 互相消耗、都未必优先打玩家，需要更高上限才能形成真正的夹击压力
-  const scale = w.players === 3 ? 0.85 : 1;
-  // 波次门槛单独缩放：三方图的矿点与集结点互相贴脸，开局即低烈度消耗战，
-  // 兵力永远攒不到大波门槛 → 全员被动到超时。门槛必须压到消耗战均衡（~6-8 人口）
-  // 之下，让持续小股袭扰驱动经济雪球，绞肉机才滚得出胜负。
-  // 简单档 AI 经济太弱（0.75×0.8），更小的门槛也打不动谁、反而全员饿死成超时，
-  // 所以简单档的门槛/密度缩放放宽一档，让两个弱 AI 之间也分得出胜负。
-  const waveScale = w.players === 3 ? (w.difficulty === 'easy' ? 0.45 : 0.25) : 1;
-  // 三人局的袭扰间隔也要缩短：矿场 100 水晶 / 25 秒回本，60 秒一波的劫掠
-  // 赶不上重建速度，经济均衡永远破不了 —— 密度必须压过重建。
-  const cdScale = w.players === 3 ? (w.difficulty === 'easy' ? 0.75 : 0.6) : 1;
+  // 96×96 大三角上三方相距 2300+，开局不再贴脸消耗，旧强特调（门槛/间隔/建设缩放）作废；
+  // 保留温和缩放：出兵门槛 ×0.75 / 间隔 ×0.85，小队袭扰在大图上啃不动满编防守，
+  // 必须 30 人口级的波次才能在三方混战里滚出胜负。
+  const scale = 1;
+  const waveScale = w.players === 3 ? 0.75 : 1;
+  const cdScale = w.players === 3 ? 0.85 : 1;
   const maxMines = Math.round(d.maxMines * scale);
   const maxBarracks = Math.round(d.maxBarracks * scale);
   const maxTowers = Math.round(d.maxTowers * scale);

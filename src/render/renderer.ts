@@ -50,7 +50,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   g.fillRect(0, 0, MAP_W, MAP_H);
 
   // 网格：保留但压到几乎不可见，只作对位参考
-  g.strokeStyle = 'rgba(240,228,200,0.03)';
+  g.strokeStyle = 'rgba(240,228,200,0.018)';
   g.lineWidth = 1;
   g.beginPath();
   for (let cx = 0; cx <= COLS; cx++) { g.moveTo(cx * TILE, 0); g.lineTo(cx * TILE, MAP_H); }
