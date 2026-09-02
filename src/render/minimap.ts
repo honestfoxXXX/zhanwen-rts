@@ -8,13 +8,10 @@ const SIDE = SIDE_FILL;
 
 export interface MiniRect { x: number; y: number; w: number; h: number }
 
-/** 小地图雷达区域（屏幕坐标，右缘竖条） */
+/** 小地图方形面板（屏幕坐标，右上角） */
 export function minimapRect(cssW: number, cssH: number): MiniRect {
-  const w = 24;
-  const top = 56;
-  const bottom = 176;
-  const h = Math.max(160, cssH - top - bottom);
-  return { x: cssW - w - 7, y: top, w, h };
+  const size = Math.max(96, Math.min(140, cssW * 0.26, cssH * 0.16));
+  return { x: cssW - size - 8, y: 54, w: size, h: size };
 }
 
 export function isInsideMinimap(sx: number, sy: number, cssW: number, cssH: number): boolean {
@@ -22,12 +19,12 @@ export function isInsideMinimap(sx: number, sy: number, cssW: number, cssH: numb
   return sx >= r.x - 4 && sx <= r.x + r.w + 4 && sy >= r.y - 4 && sy <= r.y + r.h + 4;
 }
 
-/** 把屏幕点映射为相机目标 y（点击/拖动小地图跳转视野） */
-export function jumpCameraTo(sy: number, cam: Camera): void {
+/** 把小地图上的点映射为世界坐标并让镜头居中（点击/拖动导航） */
+export function jumpCameraTo(sx: number, sy: number, cam: Camera): void {
   const r = minimapRect(cam.cssW, cam.cssH);
-  const ratio = Math.max(0, Math.min(1, (sy - r.y) / r.h));
-  cam.y = ratio * MAP_H - cam.viewH / 2;
-  cam.clamp();
+  const wx = Math.max(0, Math.min(MAP_W, ((sx - r.x) / r.w) * MAP_W));
+  const wy = Math.max(0, Math.min(MAP_H, ((sy - r.y) / r.h) * MAP_H));
+  cam.centerOn(wx, wy);
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -47,35 +44,39 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
 
   g.save();
   // 面板
-  g.globalAlpha = 0.9;
-  g.fillStyle = 'rgba(26,18,8,0.82)';
+  g.globalAlpha = 0.92;
+  g.fillStyle = 'rgba(26,18,8,0.85)';
   roundRect(g, r.x, r.y, r.w, r.h, 6);
   g.fill();
-  g.strokeStyle = 'rgba(201,162,39,0.35)';
+  g.strokeStyle = 'rgba(201,162,39,0.4)';
   g.lineWidth = 1;
   roundRect(g, r.x, r.y, r.w, r.h, 6);
   g.stroke();
   g.globalAlpha = 1;
 
-  // 1v1 画前线；三方图标出等距质心
+  // 1v1 画国境线（两出生点垂直平分线）；三方图标出质心
   const map = currentMap();
   g.strokeStyle = 'rgba(201,162,39,0.55)';
   if (map.players === 2) {
+    const a = map.spawns[0].pos, b = map.spawns[1].pos;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
     g.beginPath();
-    g.moveTo(r.x + 2, r.y + (MAP_H / 2) * sy);
-    g.lineTo(r.x + r.w - 2, r.y + (MAP_H / 2) * sy);
+    g.moveTo(r.x + (mx + (-dy / len) * 4000) * sx, r.y + (my + (dx / len) * 4000) * sy);
+    g.lineTo(r.x + (mx - (-dy / len) * 4000) * sx, r.y + (my - (dx / len) * 4000) * sy);
     g.stroke();
   } else {
     const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
     const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
     g.beginPath();
-    g.arc(r.x + tcx * sx, r.y + tcy * sy, 3, 0, Math.PI * 2);
+    g.arc(r.x + tcx * sx, r.y + tcy * sy, 3.5, 0, Math.PI * 2);
     g.stroke();
   }
 
   // 岩石地形：雷达上能看出"哪里绕得过去"
   g.fillStyle = '#6d6a63';
-  const rw = Math.max(1.6, TILE * sx), rh = Math.max(1.6, TILE * sy);
+  const rw = Math.max(1.2, TILE * sx), rh = Math.max(1.2, TILE * sy);
   for (const [cx, cy] of currentMap().rocks) {
     g.fillRect(r.x + cx * TILE * sx, r.y + cy * TILE * sy, rw, rh);
   }
@@ -84,29 +85,29 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   g.fillStyle = '#f0c24e';
   for (const n of world.nodes) {
     if (n.mineId !== null) continue;
-    g.fillRect(r.x + n.x * sx - 1.5, r.y + n.y * sy - 1.5, 3, 3);
+    g.fillRect(r.x + n.x * sx - 1.2, r.y + n.y * sy - 1.2, 2.4, 2.4);
   }
 
   // 建筑
   for (const b of world.buildings) {
     g.fillStyle = SIDE[b.side];
-    g.fillRect(r.x + (b.x - b.half) * sx, r.y + (b.y - b.half) * sy, Math.max(2.5, b.half * 2 * sx), Math.max(2.5, b.half * 2 * sy));
+    g.fillRect(r.x + (b.x - b.half) * sx, r.y + (b.y - b.half) * sy, Math.max(2, b.half * 2 * sx), Math.max(2, b.half * 2 * sy));
   }
 
   // 单位
   for (const u of world.units) {
     g.fillStyle = SIDE[u.side];
-    g.fillRect(r.x + u.x * sx - 1, r.y + u.y * sy - 1, 2, 2);
+    g.fillRect(r.x + u.x * sx - 0.8, r.y + u.y * sy - 0.8, 1.6, 1.6);
   }
 
-  // 当前视野框
+  // 当前视野框（双轴窗口）
   g.strokeStyle = 'rgba(239,228,200,0.85)';
   g.lineWidth = 1;
   g.strokeRect(
-    r.x + 1,
+    r.x + cam.x * sx,
     r.y + cam.y * sy,
-    r.w - 2,
-    Math.min(r.h - 2, cam.viewH * sy),
+    Math.min(r.w, cam.viewW * sx),
+    Math.min(r.h, cam.viewH * sy),
   );
   g.restore();
 }

@@ -38,6 +38,7 @@ const TAP_SLOP = 9; // px
 export class Input {
   private pointers = new Map<number, PointerRec>();
   private lastTap = { t: 0, id: -1, x: 0, y: 0 };
+  private pinch: { dist: number; mx: number; my: number } | null = null;
   private keys = new Set<string>();
 
   constructor(
@@ -53,28 +54,33 @@ export class Input {
     canvas.addEventListener('pointercancel', e => this.onUp(e));
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
-      this.cam.pan(e.deltaY);
+      const p = this.evPos(e);
+      this.cam.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
     }, { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', e => this.onKey(e));
     window.addEventListener('keyup', e => this.keys.delete(e.key));
   }
 
-  /** 每帧调用：键盘平移 */
+  /** 每帧调用：键盘双轴平移 */
   update(dt: number): void {
-    const speed = 480;
-    let dy = 0;
+    const speed = 620;
+    let dx = 0, dy = 0;
+    if (this.keys.has('a') || this.keys.has('ArrowLeft')) dx -= 1;
+    if (this.keys.has('d') || this.keys.has('ArrowRight')) dx += 1;
     if (this.keys.has('w') || this.keys.has('ArrowUp')) dy -= 1;
     if (this.keys.has('s') || this.keys.has('ArrowDown')) dy += 1;
-    if (dy !== 0) this.cam.pan(dy * speed * dt);
+    if (dx !== 0 || dy !== 0) this.cam.pan(dx * speed * dt, dy * speed * dt);
   }
 
   private onKey(e: KeyboardEvent): void {
     this.keys.add(e.key);
     if (e.key === 'Escape') this.hooks.onEscape();
+    if (e.key === '+' || e.key === '=') this.cam.zoomAt(1.2, this.cam.cssW / 2, this.cam.cssH / 2);
+    if (e.key === '-' || e.key === '_') this.cam.zoomAt(1 / 1.2, this.cam.cssW / 2, this.cam.cssH / 2);
   }
 
-  private evPos(e: PointerEvent): { x: number; y: number } {
+  private evPos(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
@@ -88,6 +94,7 @@ export class Input {
       pointerType: e.pointerType,
     };
     this.pointers.set(e.pointerId, rec);
+    this.pinch = null; // 手指数变化，捏合基准失效
     this.canvas.setPointerCapture(e.pointerId);
   }
 
@@ -105,21 +112,36 @@ export class Input {
 
     if (rec.minimap) {
       // 小地图拖动：视野跟随
-      jumpCameraTo(p.y, this.cam);
+      jumpCameraTo(p.x, p.y, this.cam);
       return;
     }
+
+    // 双指捏合：中点位移平移 + 以中点为锚缩放
+    if (this.pointers.size >= 2) {
+      const pts = [...this.pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mx = (pts[0].x + pts[1].x) / 2, my = (pts[0].y + pts[1].y) / 2;
+      if (this.pinch && dist > 0) {
+        this.cam.pan(mx - this.pinch.mx, my - this.pinch.my);
+        this.cam.zoomAt(dist / this.pinch.dist, mx, my);
+      }
+      this.pinch = { dist, mx, my };
+      for (const r of this.pointers.values()) r.moved = true;
+      return;
+    }
+
     if (rec.moved) {
       const mouseLeft = rec.pointerType === 'mouse' && rec.button === 0;
       if (mouseLeft && (this.ui.mode === 'none' || this.ui.mode === 'box')) {
-        // 鼠标左键拖动 → 框选（此前没有任何地方把 mode 置为 box，框选实际不可用）
+        // 鼠标左键拖动 → 框选
         this.ui.mode = 'box';
         this.ui.boxRect = { x0: rec.sx, y0: rec.sy, x1: p.x, y1: p.y };
       } else if (mouseLeft && this.ui.mode === 'place') {
         this.moveGhost(p.x, p.y);
       } else if (this.multiTouch() || rec.pointerType === 'touch' || rec.button !== 0 || this.ui.mode === 'rally') {
-        // 触屏拖动 / 多指 / 鼠标中键右键 / 集结模式拖动 → 平移镜头
+        // 触屏拖动 / 鼠标右键拖动 / 集结模式拖动 → 平移镜头
         rec.panning = true;
-        this.cam.pan(-dy);
+        this.cam.pan(-dx, -dy);
       }
     }
   }
@@ -128,12 +150,13 @@ export class Input {
     const rec = this.pointers.get(e.pointerId);
     if (!rec) return;
     this.pointers.delete(e.pointerId);
+    this.pinch = null;
     const p = { x: rec.x, y: rec.y };
     const world = this.getWorld();
     if (!world || world.gameOver) return;
 
     if (rec.minimap) {
-      if (!rec.moved) jumpCameraTo(p.y, this.cam); // 单击小地图跳转
+      if (!rec.moved) jumpCameraTo(p.x, p.y, this.cam); // 单击小地图跳转
       return;
     }
 
@@ -231,10 +254,10 @@ export class Input {
         Math.hypot(sx - this.lastTap.x, sy - this.lastTap.y) < 28;
       this.lastTap = { t: now, id: u.id, x: sx, y: sy };
       if (isDouble) {
-        // 双击：选中屏幕内同类
-        const vr = this.cam;
+        // 双击：选中视野内同类（相机窗口，双轴）
         const same = world.units.filter(v => !v.dead && v.side === 0 && v.type === u.type &&
-          v.x >= 0 && v.x <= MAP_W && (v.y > vr.y && v.y < vr.y + vr.viewH));
+          v.x >= this.cam.x && v.x <= this.cam.x + this.cam.viewW &&
+          v.y >= this.cam.y && v.y <= this.cam.y + this.cam.viewH);
         this.ui.selection = same.map(v => v.id);
         this.hooks.toast(`已选中 ${same.length} 个${u.type === 'infantry' ? '步兵' : u.type === 'archer' ? '弓手' : '重装'}`);
       } else {

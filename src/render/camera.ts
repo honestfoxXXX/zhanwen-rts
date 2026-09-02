@@ -1,36 +1,80 @@
 import { MAP_H, MAP_W } from '../core/config';
 
-/** 竖幅相机：世界宽度恰好铺满画布，垂直平移 */
+/**
+ * 自由相机：双轴平移 + 缩放，适配方形大图。
+ * scale = css px / world px，范围 [minScale, minScale*8]：
+ *   minScale = 全图恰好塞进视口（概览），默认 = 视口宽 820 世界像素（与旧小图手感一致）。
+ * 缩放始终以锚点（光标 / 捏合中点）为中心，锚点下的世界坐标保持不动。
+ */
 export class Camera {
-  scale = 1;
-  viewH = MAP_H;
+  x = 0;                 // 视口左上角（世界坐标）
   y = 0;
+  scale = 1;
   cssW = 1;
   cssH = 1;
+  minScale = 0.1;
+  viewW = 1;             // 视口宽高（世界坐标）
+  viewH = 1;
 
   resize(cssW: number, cssH: number): void {
     this.cssW = cssW;
     this.cssH = cssH;
-    this.scale = cssW / MAP_W;
-    this.viewH = cssH / this.scale;
+    this.minScale = Math.max(cssW / MAP_W, cssH / MAP_H);
+    this.scale = this.clampScale(this.defaultScale());
+    this.clamp();
+  }
+
+  /** 玩法默认档：视口宽约 820 世界像素（单位直径 ~9 css px） */
+  defaultScale(): number {
+    return this.cssW / 820;
+  }
+
+  private clampScale(s: number): number {
+    return Math.max(this.minScale, Math.min(this.minScale * 8, s));
+  }
+
+  /** 回到默认缩放档 */
+  resetZoom(): void {
+    this.scale = this.clampScale(this.defaultScale());
     this.clamp();
   }
 
   clamp(): void {
-    const max = Math.max(0, MAP_H - this.viewH);
-    this.y = Math.max(0, Math.min(max, this.y));
+    this.viewW = this.cssW / this.scale;
+    this.viewH = this.cssH / this.scale;
+    this.x = this.viewW >= MAP_W ? (MAP_W - this.viewW) / 2 : Math.max(0, Math.min(MAP_W - this.viewW, this.x));
+    this.y = this.viewH >= MAP_H ? (MAP_H - this.viewH) / 2 : Math.max(0, Math.min(MAP_H - this.viewH, this.y));
   }
 
-  pan(dyCss: number): void {
+  /** 屏幕像素位移 → 世界平移 */
+  pan(dxCss: number, dyCss: number): void {
+    this.x += dxCss / this.scale;
     this.y += dyCss / this.scale;
     this.clamp();
   }
 
+  /** 以屏幕锚点为中心缩放：锚点下的世界坐标保持不动 */
+  zoomAt(factor: number, sxCss: number, syCss: number): void {
+    const wx = sxCss / this.scale + this.x;
+    const wy = syCss / this.scale + this.y;
+    this.scale = this.clampScale(this.scale * factor);
+    this.x = wx - sxCss / this.scale;
+    this.y = wy - syCss / this.scale;
+    this.clamp();
+  }
+
+  /** 把世界点置于视口中心 */
+  centerOn(wx: number, wy: number): void {
+    this.x = wx - this.viewW / 2;
+    this.y = wy - this.viewH / 2;
+    this.clamp();
+  }
+
   worldToScreen(wx: number, wy: number): { x: number; y: number } {
-    return { x: wx * this.scale, y: (wy - this.y) * this.scale };
+    return { x: (wx - this.x) * this.scale, y: (wy - this.y) * this.scale };
   }
 
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
-    return { x: sx / this.scale, y: sy / this.scale + this.y };
+    return { x: sx / this.scale + this.x, y: sy / this.scale + this.y };
   }
 }

@@ -29,12 +29,17 @@ export type GhostInfo = { type: Building['type']; x: number; y: number; valid: b
 
 let bgCanvas: HTMLCanvasElement | null = null;
 
-/** 预渲染静态地面（棋盘 + 装饰 + 岩石 + 前线 + 基地区）。换地图需要重新调用 */
+// 3840² 的全分辨率地面画布在 iOS 上逼近内存红线，按半分辨率预渲染后放大绘制
+const BG_SCALE = 0.5;
+
+/** 预渲染静态地面（地貌装饰 + 岩石 + 国境线 + 基地区）。换地图需要重新调用 */
 export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = MAP_W;
-  c.height = MAP_H;
+  c.width = Math.round(MAP_W * BG_SCALE);
+  c.height = Math.round(MAP_H * BG_SCALE);
   const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.scale(BG_SCALE, BG_SCALE);
+  // 以下全部使用世界坐标绘制
 
   // 基底：垂直光照渐变（北亮南暗），苔绿草原
   const base = g.createLinearGradient(0, 0, 0, MAP_H);
@@ -43,13 +48,6 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   base.addColorStop(1, '#2a3f24');
   g.fillStyle = base;
   g.fillRect(0, 0, MAP_W, MAP_H);
-  // 半场淡染色（只属于 1v1 的上下对峙；三方是等距三角，没有"前线"概念）
-  if (map.players === 2) {
-    g.fillStyle = 'rgba(214,69,69,0.035)';
-    g.fillRect(0, 0, MAP_W, MAP_H / 2);
-    g.fillStyle = 'rgba(91,141,214,0.035)';
-    g.fillRect(0, MAP_H / 2, MAP_W, MAP_H / 2);
-  }
 
   // 网格：保留但压到几乎不可见，只作对位参考
   g.strokeStyle = 'rgba(240,228,200,0.03)';
@@ -59,12 +57,12 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   for (let cy = 0; cy <= ROWS; cy++) { g.moveTo(0, cy * TILE); g.lineTo(MAP_W, cy * TILE); }
   g.stroke();
 
-  // ---- 确定性地面装饰（大块色斑 / 暗斑 / 苔痕 / 草茎 / 碎石）----
-  let seed = 20260830;
+  // ---- 确定性地面装饰（大块色斑 / 暗斑 / 草茎 / 碎石 / 野花）----
+  let seed = 20260902;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   // 大块色斑：两种色相（草甸 / 褐土），让地面有"地貌"而非纯色
-  for (let i = 0; i < 34; i++) {
-    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 40 + rnd() * 90;
+  for (let i = 0; i < 150; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 60 + rnd() * 150;
     g.fillStyle = i % 2 === 0
       ? `rgba(122,158,78,${0.04 + rnd() * 0.03})`
       : `rgba(122,88,52,${0.055 + rnd() * 0.03})`;
@@ -73,8 +71,8 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
   // 暗斑
-  for (let i = 0; i < 26; i++) {
-    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 26 + rnd() * 52;
+  for (let i = 0; i < 110; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 40 + rnd() * 90;
     g.fillStyle = `rgba(2,6,16,${0.06 + rnd() * 0.06})`;
     g.beginPath();
     g.ellipse(x, y, r, r * 0.6, rnd() * Math.PI, 0, Math.PI * 2);
@@ -83,7 +81,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   // 草茎
   g.strokeStyle = 'rgba(150,190,100,0.13)';
   g.lineWidth = 1.4;
-  for (let i = 0; i < 170; i++) {
+  for (let i = 0; i < 560; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H;
     const lean = (rnd() - 0.5) * 3;
     g.beginPath();
@@ -92,7 +90,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.stroke();
   }
   // 碎石点
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 900; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 0.8 + rnd() * 1.6;
     g.fillStyle = `rgba(210,200,178,${0.05 + rnd() * 0.09})`;
     g.beginPath();
@@ -100,7 +98,7 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
   // 野花：白菊为主，少量野罂粟点缀
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 320; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H;
     const poppy = i % 6 === 0;
     g.fillStyle = poppy
@@ -128,29 +126,45 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     }
   }
 
-  // ---- 前线（1v1）：虚线 + 箭头纹；三方图改为标出三方等距的必争质心 ----
+  // ---- 国境线（1v1）：两出生点连线的垂直平分线，对角几何下依然成立；三方标出质心 ----
   if (map.players === 2) {
+    const a = map.spawns[0].pos, b = map.spawns[1].pos;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len, py = dx / len; // 法向单位向量
     g.strokeStyle = C.line;
     g.lineWidth = 2;
-    g.setLineDash([10, 8]);
+    g.setLineDash([12, 9]);
     g.beginPath();
-    g.moveTo(0, MAP_H / 2);
-    g.lineTo(MAP_W, MAP_H / 2);
+    g.moveTo(mx - px * 3400, my - py * 3400);
+    g.lineTo(mx + px * 3400, my + py * 3400);
     g.stroke();
     g.setLineDash([]);
+    const ang = Math.atan2(py, px);
     g.fillStyle = 'rgba(201,162,39,0.4)';
-    for (let x = 26; x < MAP_W; x += 64) {
+    for (let t = -3200; t <= 3200; t += 110) {
+      const x = mx + px * t, y = my + py * t;
+      if (x < 0 || x > MAP_W || y < 0 || y > MAP_H) continue;
+      g.save();
+      g.translate(x, y);
+      g.rotate(ang);
       g.beginPath();
-      g.moveTo(x, MAP_H / 2 - 5);
-      g.lineTo(x + 7, MAP_H / 2);
-      g.lineTo(x, MAP_H / 2 + 5);
+      g.moveTo(-5, -5);
+      g.lineTo(3, 0);
+      g.lineTo(-5, 5);
       g.closePath();
       g.fill();
+      g.restore();
     }
+    g.save();
+    g.translate(mx, my);
+    g.rotate(ang);
     g.fillStyle = 'rgba(201,162,39,0.55)';
-    g.font = '600 13px sans-serif';
+    g.font = '600 14px sans-serif';
     g.textAlign = 'center';
-    g.fillText('—— 国 境 线 ——', MAP_W / 2, MAP_H / 2 - 10);
+    g.fillText('—— 国 境 线 ——', 0, -12);
+    g.restore();
   } else {
     const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
     const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
@@ -158,13 +172,13 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.lineWidth = 2;
     g.setLineDash([7, 7]);
     g.beginPath();
-    g.arc(tcx, tcy, 34, 0, Math.PI * 2);
+    g.arc(tcx, tcy, 46, 0, Math.PI * 2);
     g.stroke();
     g.setLineDash([]);
     g.fillStyle = 'rgba(201,162,39,0.55)';
-    g.font = '600 12px sans-serif';
+    g.font = '600 13px sans-serif';
     g.textAlign = 'center';
-    g.fillText('王 冠 之 地', tcx, tcy - 44);
+    g.fillText('王 冠 之 地', tcx, tcy - 58);
   }
 
   // ---- 岩石：不规则多面体（投影 + 亮面 + 裂纹），两种变体避免明显平铺 ----
@@ -229,11 +243,11 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   // ---- 基地平台（HQ 底座）：阵营色光晕 + 虚线边界，按地图出生点绘制 ----
   for (const [i, sp] of map.spawns.entries()) {
     const p = sp.pos;
-    const glow = g.createRadialGradient(p.x, p.y, 6, p.x, p.y, 104);
+    const glow = g.createRadialGradient(p.x, p.y, 8, p.x, p.y, 190);
     glow.addColorStop(0, SIDE_DIM[i]);
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = glow;
-    g.fillRect(p.x - 104, p.y - 104, 208, 208);
+    g.fillRect(p.x - 190, p.y - 190, 380, 380);
     g.strokeStyle = SIDE_FILL[i];
     g.globalAlpha = 0.3;
     g.lineWidth = 1.5;
@@ -306,9 +320,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   ctx.clearRect(0, 0, cam.cssW, cam.cssH);
   ctx.save();
   ctx.scale(cam.scale, cam.scale);
-  ctx.translate(0, -cam.y);
+  ctx.translate(-cam.x, -cam.y);
 
-  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
+  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
 
   // 金矿脉矿点：石堆上三颗金块（矿是"挖出来"的，不是浮在空中的图标）
   for (const n of w.nodes) {

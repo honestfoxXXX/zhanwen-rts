@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, MAPS } from './core/config';
+import { BUILDING_DEFS, MAPS, MAP_H, MAP_W } from './core/config';
 import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
 import type { Projectile, World } from './core/types';
@@ -53,8 +53,8 @@ function layout(): void {
 }
 window.addEventListener('resize', layout);
 layout();
-cam.y = 1e9;
-cam.clamp();
+cam.resetZoom();
+cam.centerOn(MAP_W / 2, MAP_H / 2);
 
 /* ---------------- HUD 与输入接线 ---------------- */
 
@@ -141,8 +141,8 @@ function startGame(diff: World['difficulty'], players = 2): void {
   shakeT = shakeDur = shakeAmp = shakeY = 0;
   alert = null;
   hud.hideAlert();
-  cam.y = 1e9;
-  cam.clamp();
+  cam.resetZoom();
+  cam.centerOn(world.spawns[0].x, world.spawns[0].y); // 开场镜头对准己方城堡
   acc = 0;
   state = 'play';
   hud.showGame();
@@ -225,11 +225,12 @@ function drawAlertGlow(g: CanvasRenderingContext2D): void {
 
 /* ---------------- 事件 → 特效 / 音效 / 提示 ---------------- */
 
-/** 声音随事件与屏幕中心的距离衰减：远处的战斗更安静，近处的更响 */
-function volAt(y: number): number {
-  const center = cam.y + cam.viewH / 2;
-  const d = Math.abs(y - center);
-  return Math.max(0.12, 1 - d / (cam.viewH * 0.95));
+/** 声音随事件与视口中心的距离衰减：远处的战斗更安静，近处的更响 */
+function volAt(x: number, y: number): number {
+  const cx = cam.x + cam.viewW / 2, cy = cam.y + cam.viewH / 2;
+  const d = Math.hypot(x - cx, y - cy);
+  const viewR = Math.max(cam.viewW, cam.viewH) * 0.65;
+  return Math.max(0.12, 1 - d / viewR);
 }
 
 function drainEvents(): void {
@@ -243,7 +244,7 @@ function drainEvents(): void {
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
           else fx.flash(e.x, e.y, e.big ?? false);
         }
-        play('shot', e.y !== undefined ? volAt(e.y) : 1);
+        play('shot', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         // 混战里不能靠"攻击方不是我"判断挨打（AI 互相打也算），必须看事件里记录的挨打方
         if (e.targetSide === 0 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
           triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);
@@ -253,16 +254,16 @@ function drainEvents(): void {
         if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
           fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
         }
-        play('die', e.y !== undefined ? volAt(e.y) : 1);
+        play('die', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         break;
       case 'boom':
         if (e.x !== undefined && e.y !== undefined) fx.boomEvent(e.x, e.y, e.big ?? false);
-        play('boom', e.big ? 1 : e.y !== undefined ? volAt(e.y) : 1);
+        play('boom', e.big ? 1 : e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         if (e.big) shake(5, 0.32); // 大建筑被毁：镜头震一下
         break;
       case 'built':
         if (e.x !== undefined && e.y !== undefined && e.side !== undefined) fx.builtEvent(e.x, e.y, e.side);
-        play('built', e.y !== undefined ? volAt(e.y) : 1);
+        play('built', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         break;
       case 'moveMark':
         if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y);
