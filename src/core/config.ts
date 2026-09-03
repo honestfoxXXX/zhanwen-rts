@@ -35,6 +35,14 @@ export interface SpawnDef {
   build: { x0: number; x1: number; y0: number; y1: number };
 }
 
+/** 河流：平滑折线（世界坐标）+ 浅滩（可通行 crossing）。河流格参与寻路阻挡，浅滩豁免 */
+export interface RiverDef {
+  pts: Vec[];
+  fords: Vec[];
+  width: number; // 水面宽（世界 px）
+}
+
+/** 地图定义 */
 export interface MapDef {
   id: string;
   name: string;
@@ -47,6 +55,8 @@ export interface MapDef {
   /** 水晶矿点（世界坐标）。布局必须满足对应人数下的对称性约束 */
   nodes: Vec[];
   spawns: SpawnDef[];
+  /** 可选河流（可多条），参与寻路阻挡 */
+  rivers?: RiverDef[];
 }
 
 /**
@@ -118,13 +128,20 @@ function rot3Rocks(cx: number, cy: number, base: [number, number][]): [number, n
   return [...seen.values()];
 }
 
+/** 河流：平滑折线（世界坐标）+ 浅滩（可通行 crossing）。河流格参与寻路阻挡，浅滩豁免 */
+export interface RiverDef {
+  pts: Vec[];
+  fords: Vec[];
+  width: number; // 水面宽（世界 px）
+}
+
 /** 支持的参战人数 */
 export const PLAYER_COUNTS = [2, 3];
 
 /** 2P 共用矿点：8 对中心对称（中央对角双点 + 双侧翼路 + 基本盘 + 边角富矿） */
 const NODES_2P: Vec[] = mirror2Nodes([
   { x: 720, y: 3120 },    // 家门口基本盘
-  { x: 1320, y: 3260 },   // 家侧翼
+  { x: 1240, y: 3380 },   // 家侧翼（避开河道）
   { x: 1320, y: 2520 },   // 中路对角线南段
   { x: 1760, y: 1760 },   // 中央争夺簇（紧贴质心）
   { x: 760, y: 1920 },    // 西侧翼路中段
@@ -132,6 +149,29 @@ const NODES_2P: Vec[] = mirror2Nodes([
   { x: 480, y: 1600 },    // 西北边角富矿
   { x: 1600, y: 480 },    // 东北边角富矿（镜像方向）
 ]);
+
+/** 西南侧翼河（点对称后东北也有一条）：把侧翼路切成「桥/浅滩争夺战」 */
+const RIVER_SW: RiverDef = {
+  pts: [
+    { x: -60, y: 2380 },
+    { x: 700, y: 2760 },
+    { x: 1400, y: 3260 },
+    { x: 1960, y: 3900 },
+  ],
+  fords: [{ x: 950, y: 2940 }, { x: 300, y: 2560 }],
+  width: 110,
+};
+
+/** 点对称补全河流（对岸也有一条，保持 2P 对称公平） */
+function mirror2River(r: RiverDef): RiverDef {
+  const m = (p: Vec): Vec => ({ x: MAP_W - p.x, y: MAP_H - p.y });
+  return { pts: r.pts.map(m), fords: r.fords.map(m), width: r.width };
+}
+
+/** 原河 + 镜像河成对 */
+function pair2Rivers(r: RiverDef): RiverDef[] {
+  return [r, mirror2River(r)];
+}
 
 export const MAPS: MapDef[] = [
   {
@@ -147,6 +187,7 @@ export const MAPS: MapDef[] = [
       [10, 52], [11, 52], [10, 53],                  // 西南碎岩
     ]),
     nodes: NODES_2P,
+    rivers: pair2Rivers(RIVER_SW),
   },
   {
     id: 'open',

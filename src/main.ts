@@ -368,6 +368,7 @@ declare global {
   interface Window {
     __zw?: {
       world: () => World | null;
+      cam: () => import('./render/camera').Camera;
       ui: UIState;
       findPath: (x0: number, y0: number, x1: number, y1: number) => import('./core/types').Vec[] | null;
       nudge: (sec: number) => number;
@@ -376,6 +377,7 @@ declare global {
 }
 window.__zw = {
   world: () => world,
+  cam: () => cam,
   ui,
   findPath: (...a) => findPath(world ? world.blocked : new Uint8Array(0), ...a),
   // 测试用：确定性快进（仅游戏中有效）

@@ -102,7 +102,7 @@ export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number
 
   let found = false;
   let guard = 0;
-  const guardMax = Math.max(12000, (COLS * ROWS * 3) >> 1); // 大图 A* 上限随格数缩放
+  const guardMax = COLS * ROWS * 2.5; // 大图整图路径 + 河流绕行需要足够的探索预算
   while (heap.length && guard++ < guardMax) {
     const cur = pop();
     if (closed[cur]) continue;

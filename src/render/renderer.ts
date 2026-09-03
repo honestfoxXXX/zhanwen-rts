@@ -29,8 +29,76 @@ export type GhostInfo = { type: Building['type']; x: number; y: number; valid: b
 
 let bgCanvas: HTMLCanvasElement | null = null;
 
-// 3840² 的全分辨率地面画布在 iOS 上逼近内存红线，按半分辨率预渲染后放大绘制
-const BG_SCALE = 0.5;
+// 3840² 全分辨率画布在 iOS 上逼近内存红线；0.75 分辨率（2880²）是清晰度与内存的平衡点
+const BG_SCALE = 0.75;
+
+// 河流采样（A1 绘制时填充；运行时用于水面闪烁）
+const riverSamples: { x: number; y: number; a: number }[] = [];
+
+// 云影：预渲染两张柔影贴图，世界锚定慢速漂移（渲染在地面之上、单位之下）
+let cloudSprites: HTMLCanvasElement[] = [];
+const CLOUDS = [
+  { x: 400, y: 600, w: 900, h: 520, speed: 13, alpha: 0.5 },
+  { x: 1800, y: 2100, w: 1200, h: 640, speed: 9, alpha: 0.42 },
+  { x: 3000, y: 900, w: 800, h: 480, speed: 15, alpha: 0.5 },
+  { x: 900, y: 2900, w: 1000, h: 560, speed: 11, alpha: 0.45 },
+  { x: 2600, y: 3000, w: 850, h: 500, speed: 14, alpha: 0.5 },
+  { x: 1500, y: 1200, w: 700, h: 420, speed: 17, alpha: 0.4 },
+];
+
+function makeCloudSprite(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 160;
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  const blob = (x: number, y: number, r: number, a: number): void => {
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(8,20,12,${a})`);
+    grad.addColorStop(1, 'rgba(8,20,12,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  };
+  blob(90, 80, 78, 0.5);
+  blob(150, 70, 64, 0.42);
+  blob(120, 100, 90, 0.4);
+  blob(60, 96, 52, 0.36);
+  return c;
+}
+
+/** 水面闪烁：沿河采样点画短亮划，相位错开（纯时间驱动，零分配） */
+function drawWaterShimmer(g: CanvasRenderingContext2D, time: number): void {
+  if (!riverSamples.length) return;
+  g.save();
+  g.strokeStyle = 'rgba(214,232,240,0.32)';
+  g.lineWidth = 1.4;
+  g.lineCap = 'round';
+  for (let i = 0; i < riverSamples.length; i += 2) {
+    const p = riverSamples[i];
+    const ph = Math.sin(time * 1.8 + i * 1.37);
+    if (ph < 0.25) continue;
+    g.globalAlpha = 0.15 + ph * 0.22;
+    const ox = Math.cos(p.a + Math.PI / 2) * (ph - 0.5) * 18;
+    const oy = Math.sin(p.a + Math.PI / 2) * (ph - 0.5) * 18;
+    g.beginPath();
+    g.moveTo(p.x + ox - Math.cos(p.a) * 7, p.y + oy - Math.sin(p.a) * 7);
+    g.lineTo(p.x + ox + Math.cos(p.a) * 7, p.y + oy + Math.sin(p.a) * 7);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.restore();
+}
+
+/** 云影漂移（世界锚定，地面之上、单位之下） */
+function drawCloudShadows(g: CanvasRenderingContext2D, time: number): void {
+  for (let i = 0; i < CLOUDS.length; i++) {
+    const c = CLOUDS[i];
+    const cx = ((c.x + time * c.speed) % (MAP_W + 1400)) - 700;
+    g.save();
+    g.globalAlpha = c.alpha;
+    g.drawImage(cloudSprites[i % cloudSprites.length], cx, c.y, c.w, c.h);
+    g.restore();
+  }
+}
 
 /** 预渲染静态地面（地貌装饰 + 岩石 + 国境线 + 基地区）。换地图需要重新调用 */
 export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
@@ -109,13 +177,67 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
 
+  // ---- 河流：岸 → 水面 → 浅滩（有河流的图）----
+  riverSamples.length = 0;
+  for (const river of map.rivers ?? []) {
+    const pts: { x: number; y: number; a: number }[] = [];
+    for (let i = 0; i < river.pts.length - 1; i++) {
+      const a = river.pts[i], b = river.pts[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const n = Math.max(1, Math.ceil(d / 60));
+      for (let k = 0; k < n; k++) {
+        const x = a.x + (dx * k) / n, y = a.y + (dy * k) / n;
+        pts.push({ x, y, a: Math.atan2(dy, dx) });
+      }
+    }
+    // 岸草
+    g.strokeStyle = 'rgba(70,90,52,0.8)';
+    g.lineWidth = river.width + 34;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    pts.forEach((p, i) => (i === 0 ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y)));
+    g.stroke();
+    // 水面
+    g.strokeStyle = 'rgba(38,66,88,0.92)';
+    g.lineWidth = river.width;
+    g.stroke();
+    // 深水芯
+    g.strokeStyle = 'rgba(22,44,64,0.7)';
+    g.lineWidth = river.width * 0.55;
+    g.stroke();
+    // 浅滩（可通行）：亮沙 + 踏石
+    g.lineCap = 'butt';
+    for (const f of river.fords) {
+      g.fillStyle = 'rgba(196,186,150,0.75)';
+      g.beginPath();
+      g.ellipse(f.x, f.y, 62, 44, Math.atan2(1, 1.4), 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(120,110,80,0.8)';
+      for (const [sx, sy] of [[-16, -6], [2, 4], [14, -4], [-4, 10]] as const) {
+        g.beginPath();
+        g.arc(f.x + sx, f.y + sy, 3.4, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    riverSamples.push(...pts);
+  }
+
   // 泥土路：每个出生点一条弯路通往地图质心 —— 1v1 是两条主路在前线会合，
   // 三方是三条路汇聚"王冠之地"。画在岩石之前，路被巨石截断才自然。
   const roadCx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
   const roadCy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+  const roadSamples: { x: number; y: number }[] = [];
   for (const sp of map.spawns) {
     const mx = (sp.pos.x + roadCx) / 2 + (sp.pos.y - roadCy) * 0.08;
     const my = (sp.pos.y + roadCy) / 2 - (sp.pos.x - roadCx) * 0.08;
+    for (let k = 0; k <= 24; k++) {
+      const t = k / 24;
+      const ix = (1 - t) * (1 - t) * sp.pos.x + 2 * (1 - t) * t * mx + t * t * roadCx;
+      const iy = (1 - t) * (1 - t) * sp.pos.y + 2 * (1 - t) * t * my + t * t * roadCy;
+      roadSamples.push({ x: ix, y: iy });
+    }
     for (const [c, lw] of [['rgba(60,42,24,0.35)', 30], ['rgba(138,106,66,0.55)', 22]] as const) {
       g.strokeStyle = c;
       g.lineWidth = lw;
@@ -123,6 +245,126 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
       g.moveTo(sp.pos.x, sp.pos.y);
       g.quadraticCurveTo(mx, my, roadCx, roadCy);
       g.stroke();
+    }
+  }
+
+  // ---- 树丛：边缘林带 + 野地树簇（纯装饰；避开要道/河流/出生/矿/岩石/质心）----
+  {
+    const near = (list: { x: number; y: number }[], x: number, y: number, r: number): boolean => {
+      for (const p of list) if ((p.x - x) ** 2 + (p.y - y) ** 2 < r * r) return true;
+      return false;
+    };
+    const spawnPts = map.spawns.map(s => s.pos);
+    const rockPts = map.rocks.map(([tx, ty]) => ({ x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE }));
+    const treeSpot = (x: number, y: number): boolean => {
+      if (x < 80 || y < 80 || x > MAP_W - 80 || y > MAP_H - 80) return false;
+      if (near(spawnPts, x, y, 320)) return false;
+      if (near(map.nodes, x, y, 150)) return false;
+      if (near(rockPts, x, y, 95)) return false;
+      if (near(roadSamples, x, y, 70)) return false;
+      if (near(riverSamples, x, y, 130)) return false;
+      if ((x - roadCx) ** 2 + (y - roadCy) ** 2 < 300 * 300) return false; // 质心留空
+      return true;
+    };
+    const drawTree = (x: number, y: number, s: number, v: number): void => {
+      g.fillStyle = 'rgba(10,20,12,0.28)';
+      g.beginPath();
+      g.ellipse(x + 6 * s, y + 8 * s, 15 * s, 6 * s, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#4a3524';
+      g.beginPath();
+      g.moveTo(x - 3 * s, y + 6 * s);
+      g.lineTo(x - 1.3 * s, y - 5 * s);
+      g.lineTo(x + 1.3 * s, y - 5 * s);
+      g.lineTo(x + 3 * s, y + 6 * s);
+      g.closePath();
+      g.fill();
+      if (v === 0) {
+        // 阔叶：三层圆冠
+        g.fillStyle = '#26421f';
+        g.beginPath(); g.arc(x, y - 14 * s, 14 * s, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#33552a';
+        g.beginPath(); g.arc(x - 4 * s, y - 18 * s, 10 * s, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#4b7136';
+        g.beginPath(); g.arc(x - 3 * s, y - 21 * s, 5.6 * s, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(214,232,150,0.5)';
+        g.beginPath(); g.arc(x - 6 * s, y - 22 * s, 2 * s, 0, Math.PI * 2); g.fill();
+      } else if (v === 1) {
+        // 高杉：三层塔冠
+        g.fillStyle = '#1f3a22';
+        g.beginPath();
+        g.moveTo(x - 12 * s, y + 2 * s); g.lineTo(x, -18 * s + y); g.lineTo(x + 12 * s, y + 2 * s);
+        g.closePath(); g.fill();
+        g.fillStyle = '#2c4f2b';
+        g.beginPath();
+        g.moveTo(x - 9 * s, y - 8 * s); g.lineTo(x, -24 * s + y); g.lineTo(x + 9 * s, y - 8 * s);
+        g.closePath(); g.fill();
+        g.fillStyle = '#3d6634';
+        g.beginPath();
+        g.moveTo(x - 6 * s, y - 15 * s); g.lineTo(x, -27 * s + y); g.lineTo(x + 6 * s, y - 15 * s);
+        g.closePath(); g.fill();
+      } else {
+        // 幼树
+        g.fillStyle = '#2c4f2b';
+        g.beginPath(); g.arc(x, y - 9 * s, 8 * s, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#466d36';
+        g.beginPath(); g.arc(x - 2.5 * s, y - 11 * s, 4.5 * s, 0, Math.PI * 2); g.fill();
+      }
+    };
+    let planted = 0;
+    for (let i = 0; i < 1400 && planted < 150; i++) {
+      const x = rnd() * MAP_W, y = rnd() * MAP_H;
+      if (!treeSpot(x, y)) continue;
+      // 聚簇：一半概率在附近再补 1-3 棵
+      drawTree(x, y, 0.9 + rnd() * 0.5, Math.floor(rnd() * 3));
+      planted++;
+      const extra = 1 + Math.floor(rnd() * 3);
+      for (let e = 0; e < extra && planted < 150; e++) {
+        const ox = x + (rnd() - 0.5) * 220, oy = y + (rnd() - 0.5) * 220;
+        if (!treeSpot(ox, oy)) continue;
+        drawTree(ox, oy, 0.8 + rnd() * 0.55, Math.floor(rnd() * 3));
+        planted++;
+      }
+    }
+
+    // ---- 氛围点缀：出生点旁的小营地（篝火 + 木堆 + 帐篷角）----
+    for (const sp of map.spawns) {
+      const px = sp.pos.x - 150, py = sp.pos.y - 150;
+      // 篝火
+      g.fillStyle = '#4a3524';
+      for (const [a, b] of [[-1, -1], [1, -1]] as const) {
+        g.save();
+        g.translate(px, py);
+        g.rotate(a * b * 0.7);
+        g.fillRect(-9, -1.5, 18, 3);
+        g.restore();
+      }
+      g.fillStyle = 'rgba(255,146,40,0.85)';
+      g.beginPath(); g.arc(px, py - 2, 4, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,220,120,0.9)';
+      g.beginPath(); g.arc(px, py - 2.5, 2, 0, Math.PI * 2); g.fill();
+      // 木堆
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(px + 16, py - 4, 14, 3.2);
+      g.fillRect(px + 18, py - 7, 10, 3.2);
+      // 帐篷角
+      g.fillStyle = '#8a6f42';
+      g.beginPath();
+      g.moveTo(px - 26, py + 8); g.lineTo(px - 18, py - 8); g.lineTo(px - 10, py + 8);
+      g.closePath(); g.fill();
+    }
+    // 三方图：王冠之地石阵
+    if (map.players === 3) {
+      const tcx = map.spawns.reduce((s, p) => s + p.pos.x, 0) / map.players;
+      const tcy = map.spawns.reduce((s, p) => s + p.pos.y, 0) / map.players;
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + 0.3;
+        const sx = tcx + Math.cos(a) * 70, sy = tcy + Math.sin(a) * 70;
+        g.fillStyle = '#57544d';
+        g.fillRect(sx - 7, sy - 16, 14, 20);
+        g.fillStyle = 'rgba(255,255,255,0.1)';
+        g.fillRect(sx - 7, sy - 16, 14, 5);
+      }
     }
   }
 
@@ -292,6 +534,9 @@ let curMap: MapDef = MAPS[0];
 
 export function initRenderer(map: MapDef = MAPS[0]): void {
   curMap = map;
+  if (!cloudSprites.length) {
+    cloudSprites = [makeCloudSprite(), makeCloudSprite()];
+  }
   bgCanvas = buildBackground(map);
 }
 
@@ -323,6 +568,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   ctx.translate(-cam.x, -cam.y);
 
   if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
+  drawCloudShadows(ctx, w.time);
+  drawWaterShimmer(ctx, w.time);
 
   // 金矿脉矿点：石堆上三颗金块（矿是"挖出来"的，不是浮在空中的图标）
   for (const n of w.nodes) {

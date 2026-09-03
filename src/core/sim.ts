@@ -79,11 +79,46 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
 /* ---------------- 世界创建 ---------------- */
 
 /** mapIndex 省略时用默认地图（中央关口），既有测试因此不受影响。参战方数由地图决定 */
+/** 河流格标记：沿折线密采样，圆刷覆盖；浅滩（ford）半径内豁免保持通路 */
+function markRiverTiles(blocked: Uint8Array, river: { pts: Vec[]; fords: Vec[]; width: number }): void {
+  const R = river.width / 2 + 8;
+  const pts: Vec[] = [];
+  for (let i = 0; i < river.pts.length - 1; i++) {
+    const a = river.pts[i], b = river.pts[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const n = Math.max(1, Math.ceil(d / 24));
+    for (let k = 0; k < n; k++) pts.push({ x: a.x + (dx * k) / n, y: a.y + (dy * k) / n });
+  }
+  pts.push(river.pts[river.pts.length - 1]);
+  const rTiles = Math.ceil((R + 14) / TILE);
+  for (const p of pts) {
+    const tcx = Math.floor(p.x / TILE), tcy = Math.floor(p.y / TILE);
+    for (let dy = -rTiles; dy <= rTiles; dy++) {
+      for (let dx = -rTiles; dx <= rTiles; dx++) {
+        const tx = tcx + dx, ty = tcy + dy;
+        if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) continue;
+        const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2;
+        const ex = cx - p.x, ey = cy - p.y;
+        if (Math.sqrt(ex * ex + ey * ey) > R + 14) continue;
+        let ford = false;
+        for (const f of river.fords) {
+          const fx = cx - f.x, fy = cy - f.y;
+          if (Math.sqrt(fx * fx + fy * fy) < 110) { ford = true; break; }
+        }
+        if (ford) continue;
+        blocked[ty * COLS + tx] = 1;
+      }
+    }
+  }
+}
+
 export function createWorld(difficulty: World['difficulty'], seed: number, mapIndex = 0): World {
   const map = MAPS[mapIndex % MAPS.length];
   const players = map.spawns.length;
   const blocked = new Uint8Array(COLS * ROWS);
   for (const [cx, cy] of map.rocks) blocked[cy * COLS + cx] = 1;
+  for (const r of map.rivers ?? []) markRiverTiles(blocked, r);
 
   const midX = MAP_W / 2, midY = MAP_H / 2;
 
