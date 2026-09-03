@@ -6,6 +6,8 @@ import type { Building, Unit, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
 import { drawUnitBody, SIDE_DARK, SIDE_DIM, SIDE_FILL } from './shapes';
+import { getSprite } from './spriteCache';
+import type { BuildingType, Side } from '../core/types';
 
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
 const SIDE = SIDE_FILL;
@@ -780,51 +782,424 @@ function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected
   if (selected || u.hp < u.maxHp) hpBar(ctx, u.x, u.y - r - 8, r * 2, u.hp, u.maxHp);
 }
 
+/** 损伤冒烟：受损建筑顶部持续冒烟（纯时间驱动） */
+function smokePuffs(g: CanvasRenderingContext2D, x: number, y: number, seed: number): void {
+  for (let i = 0; i < 3; i++) {
+    const k = (seed * 0.4 + i * 0.33) % 1;
+    g.globalAlpha = 0.2 * (1 - k);
+    g.fillStyle = '#6f6f6f';
+    g.beginPath();
+    g.arc(x + i * 7 - 5, y - k * 26, 2.5 + k * 4.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+/** 建筑静态主体（精灵缓存内绘制；中心 0,0；dmg = 损伤档 0/1/2） */
+function paintBuildingStatic(
+  g: CanvasRenderingContext2D,
+  type: BuildingType,
+  side: Side,
+  h: number,
+  dmg: number,
+): void {
+  // 底板 + 阵营描边
+  g.fillStyle = SIDE_DIM[side];
+  roundRect(g, -h, -h, h * 2, h * 2, 10);
+  g.fill();
+  g.strokeStyle = SIDE[side];
+  g.lineWidth = 2.5;
+  roundRect(g, -h, -h, h * 2, h * 2, 10);
+  g.stroke();
+  // 主基地/金矿地面光晕（静态部分）
+  if (type === 'hq' || type === 'mine') {
+    const gl = g.createRadialGradient(0, 2, 4, 0, 2, h + 16);
+    gl.addColorStop(0, SIDE_DIM[side]);
+    gl.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gl;
+    g.fillRect(-(h + 16), -(h + 14), (h + 16) * 2, (h + 16) * 2 + 8);
+    if (type === 'mine') {
+      const gl2 = g.createRadialGradient(0, 4, 2, 0, 4, h * 0.62);
+      gl2.addColorStop(0, 'rgba(240,194,78,0.10)');
+      gl2.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gl2;
+      g.fillRect(-h * 0.62, -h * 0.62, h * 1.24, h * 1.24 + 6);
+    }
+  }
+  switch (type) {
+    case 'hq': {
+      // 双侧塔楼（石砌）
+      g.fillStyle = '#857f71';
+      g.fillRect(-21, -9, 9, 23);
+      g.fillRect(12, -9, 9, 23);
+      g.strokeStyle = 'rgba(40,34,24,0.35)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(-20, 0); g.lineTo(-13, 0);
+      g.moveTo(13, 0); g.lineTo(20, 0);
+      g.moveTo(-20, 8); g.lineTo(-13, 8);
+      g.moveTo(13, 8); g.lineTo(20, 8);
+      g.stroke();
+      // 主堡 + 石缝
+      g.fillStyle = '#a29c8e';
+      g.fillRect(-12, -7, 24, 25);
+      g.beginPath();
+      g.moveTo(-11, 1); g.lineTo(11, 1);
+      g.moveTo(-11, 9); g.lineTo(11, 9);
+      g.moveTo(-5, -3); g.lineTo(-5, 1);
+      g.moveTo(6, 1); g.lineTo(6, 9);
+      g.stroke();
+      // 右缘暗面（体积）
+      g.fillStyle = 'rgba(30,24,16,0.14)';
+      g.fillRect(6, -7, 6, 25);
+      // 雉堞：主堡 + 双塔
+      g.fillStyle = '#b5afa0';
+      g.fillRect(-12, -11, 24, 5);
+      g.fillRect(-21, -13, 9, 5);
+      g.fillRect(12, -13, 9, 5);
+      g.fillStyle = '#6e695e';
+      for (const nx of [-8.5, -2.5, 3.5]) g.fillRect(nx, -11, 2.2, 5);
+      g.fillRect(-16.5, -13, 2, 5);
+      g.fillRect(-11.5, -13, 2, 5);
+      g.fillRect(16.5, -13, 2, 5);
+      g.fillRect(10.5, -13, 2, 5);
+      // 拱门 + 门闸
+      g.fillStyle = 'rgba(26,20,12,0.82)';
+      g.beginPath();
+      g.moveTo(-4.5, 18);
+      g.lineTo(-4.5, 14);
+      g.arc(0, 14, 4.5, Math.PI, 0);
+      g.lineTo(4.5, 18);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(201,162,39,0.55)';
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(-1.5, 15); g.lineTo(-1.5, 18);
+      g.moveTo(1.5, 15); g.lineTo(1.5, 18);
+      g.stroke();
+      // 箭窗 + 门拱火把杆
+      g.fillStyle = 'rgba(26,20,12,0.7)';
+      g.fillRect(-7.2, -4, 1.6, 3.5);
+      g.fillRect(5.6, -4, 1.6, 3.5);
+      g.fillStyle = 'rgba(20,14,8,0.7)';
+      g.fillRect(-8.8, 6, 1.6, 4);
+      g.fillRect(7.2, 6, 1.6, 4);
+      // 旗杆（旗布动态）
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(16.5, -13);
+      g.lineTo(16.5, -25);
+      g.stroke();
+      break;
+    }
+    case 'mine': {
+      g.fillStyle = '#7d7566';
+      g.beginPath();
+      g.ellipse(0, 7, 15, 7.5, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.14)';
+      g.beginPath();
+      g.ellipse(-4, 3.5, 8, 3.4, -0.25, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#221a0e';
+      g.beginPath();
+      g.ellipse(0, 3.5, 6.5, 4.2, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#6b4a2a';
+      g.lineWidth = 2.4;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(-8, 12);
+      g.lineTo(-3.5, -8);
+      g.moveTo(8, 12);
+      g.lineTo(3.5, -8);
+      g.stroke();
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-6, -6.5);
+      g.lineTo(6, -6.5);
+      g.stroke();
+      g.lineCap = 'butt';
+      g.fillStyle = '#f0c24e';
+      for (const [gx, gy, gr] of [[-7, 11, 3.6], [6, 12, 3.2], [0, 13.5, 3]] as const) {
+        g.beginPath();
+        g.arc(gx, gy, gr, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = '#ffe9a8';
+      for (const [gx, gy] of [[-8, 10], [5, 11], [-1, 12.6]] as const) {
+        g.beginPath();
+        g.arc(gx, gy, 1.1, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'barracks': {
+      g.strokeStyle = 'rgba(60,48,30,0.5)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(0, -12);
+      g.lineTo(-19, 12);
+      g.moveTo(0, -12);
+      g.lineTo(19, 12);
+      g.stroke();
+      g.fillStyle = 'rgba(0,0,0,0.28)';
+      g.beginPath();
+      g.ellipse(0, 13, 17, 4.5, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = SIDE[side];
+      g.beginPath();
+      g.moveTo(-16, 12);
+      g.lineTo(0, -13);
+      g.lineTo(16, 12);
+      g.closePath();
+      g.fill();
+      g.fillStyle = 'rgba(0,0,0,0.2)';
+      g.beginPath();
+      g.moveTo(0, -13);
+      g.lineTo(16, 12);
+      g.lineTo(4, 12);
+      g.closePath();
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.14)';
+      g.beginPath();
+      g.moveTo(0, -13);
+      g.lineTo(-16, 12);
+      g.lineTo(-7, 12);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(245,236,210,0.55)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-13, 7.5);
+      g.lineTo(-1.5, -11);
+      g.moveTo(2.5, -10.4);
+      g.lineTo(13, 7.5);
+      g.stroke();
+      g.fillStyle = 'rgba(20,14,8,0.6)';
+      g.beginPath();
+      g.moveTo(0, -3);
+      g.lineTo(-4.5, 12);
+      g.lineTo(4.5, 12);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(20,14,8,0.55)';
+      g.lineWidth = 1.8;
+      g.beginPath();
+      g.moveTo(0, -13);
+      g.lineTo(0, 12);
+      g.stroke();
+      // 旗杆（旗布动态）
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-h + 8, -h + 22);
+      g.lineTo(-h + 8, -h + 6);
+      g.stroke();
+      break;
+    }
+    case 'tower': {
+      g.fillStyle = 'rgba(0,0,0,0.28)';
+      g.beginPath();
+      g.ellipse(0, 13, 11, 4, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#a29c8e';
+      g.beginPath();
+      g.moveTo(-8.5, 13);
+      g.lineTo(-6, -7);
+      g.lineTo(6, -7);
+      g.lineTo(8.5, 13);
+      g.closePath();
+      g.fill();
+      g.fillStyle = 'rgba(30,24,16,0.14)';
+      g.beginPath();
+      g.moveTo(2, -7);
+      g.lineTo(6, -7);
+      g.lineTo(8.5, 13);
+      g.lineTo(3.5, 13);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(40,34,24,0.35)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(-6.8, 5);
+      g.lineTo(7.2, 5);
+      g.moveTo(-5.8, -1);
+      g.lineTo(6.2, -1);
+      g.moveTo(-6.4, 2);
+      g.lineTo(-3.4, 2);
+      g.moveTo(4.4, 8);
+      g.lineTo(7.4, 8);
+      g.stroke();
+      g.fillStyle = '#b5afa0';
+      g.fillRect(-7.5, -12, 15, 5);
+      g.fillStyle = '#6e695e';
+      g.fillRect(-3.2, -12, 2, 5);
+      g.fillRect(3.4, -12, 2, 5);
+      g.fillStyle = 'rgba(26,20,12,0.75)';
+      g.fillRect(-0.8, -4.5, 1.6, 4);
+      break;
+    }
+  }
+  // 损伤层：裂纹 + 焦痕
+  if (dmg >= 1) {
+    g.strokeStyle = 'rgba(20,14,8,0.55)';
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(-h * 0.5, -h * 0.3);
+    g.lineTo(-h * 0.2, -h * 0.05);
+    g.lineTo(-h * 0.35, h * 0.25);
+    g.moveTo(h * 0.4, -h * 0.5);
+    g.lineTo(h * 0.15, -h * 0.25);
+    g.stroke();
+  }
+  if (dmg >= 2) {
+    g.strokeStyle = 'rgba(20,14,8,0.6)';
+    g.beginPath();
+    g.moveTo(h * 0.1, h * 0.1);
+    g.lineTo(h * 0.45, h * 0.45);
+    g.moveTo(-h * 0.55, h * 0.2);
+    g.lineTo(-h * 0.25, h * 0.45);
+    g.stroke();
+    g.fillStyle = 'rgba(30,22,12,0.35)';
+    g.beginPath();
+    g.arc(h * 0.3, h * 0.28, h * 0.22, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+/** 建筑动态层：旗布/火把焰/旋转光环/炮管（时间驱动，不进缓存） */
+function drawBuildingDynamic(
+  g: CanvasRenderingContext2D,
+  b: Building,
+  h: number,
+  time: number,
+): void {
+  const side = b.side;
+  if (b.type === 'hq') {
+    // 低血量警示脉冲
+    if (b.hp < b.maxHp * 0.4) {
+      g.save();
+      g.globalAlpha = 0.5 + 0.3 * Math.sin(time * 6);
+      g.shadowColor = '#f87171';
+      g.shadowBlur = 18;
+      g.strokeStyle = '#f87171';
+      g.lineWidth = 3;
+      roundRect(g, -h + 2, -h + 2, h * 2 - 4, h * 2 - 4, 10);
+      g.stroke();
+      g.restore();
+    }
+    // 旋转光环
+    g.save();
+    g.rotate(time * 0.8);
+    g.setLineDash([9, 7]);
+    g.strokeStyle = 'rgba(201,162,39,0.5)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(0, 0, h + 3, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+    // 旗布（右塔）
+    const fw = Math.sin(time * 4.4 + b.id) * 1.4;
+    g.fillStyle = SIDE_FILL[side];
+    g.beginPath();
+    g.moveTo(16.5, -25);
+    g.quadraticCurveTo(22.5, -23.4 + fw, 27.5, -20.8 + fw);
+    g.lineTo(16.5, -17.4);
+    g.closePath();
+    g.fill();
+    // 门拱火把焰
+    for (const tx of [-8, 8]) {
+      const fl = 2.2 + Math.sin(time * 11 + tx) * 0.8;
+      g.fillStyle = 'rgba(255,146,40,0.9)';
+      g.beginPath();
+      g.ellipse(tx, 9, 1.6, fl, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(255,220,120,0.9)';
+      g.beginPath();
+      g.ellipse(tx, 9, 0.8, fl * 0.55, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else if (b.type === 'mine') {
+    // 闪光
+    g.save();
+    g.rotate(time * 1.6);
+    g.strokeStyle = 'rgba(255,233,168,0.8)';
+    g.lineWidth = 1.1;
+    g.beginPath();
+    g.moveTo(12, -4);
+    g.lineTo(15, -4);
+    g.moveTo(0, -13);
+    g.lineTo(0, -16);
+    g.stroke();
+    g.restore();
+  } else if (b.type === 'barracks') {
+    // 旗布
+    const fw = Math.sin(time * 5 + b.id) * 1.5;
+    g.fillStyle = SIDE_FILL[side];
+    g.beginPath();
+    g.moveTo(-h + 8, -h + 6);
+    g.quadraticCurveTo(-h + 15, -h + 8 + fw, -h + 21, -h + 10 + fw);
+    g.lineTo(-h + 8, -h + 14);
+    g.closePath();
+    g.fill();
+  } else if (b.type === 'tower') {
+    // 追踪炮管 + 枢轴 + 枪口焰
+    g.save();
+    g.rotate(b.facing);
+    g.fillStyle = SIDE_DARK[side];
+    g.fillRect(0, -1.6, 16, 3.2);
+    g.restore();
+    g.fillStyle = SIDE_DARK[side];
+    g.beginPath();
+    g.arc(0, 0, 3.2, 0, Math.PI * 2);
+    g.fill();
+    if (b.cd > (BUILDING_DEFS.tower.weapon?.cooldown ?? 1) - 0.1) {
+      g.save();
+      g.rotate(b.facing);
+      g.fillStyle = 'rgba(253,230,138,0.95)';
+      g.beginPath();
+      g.arc(18, 0, 4.2, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+  }
+}
+
 function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number): void {
   const h = b.half;
   const constructing = b.buildT > 0;
   ctx.save();
   ctx.translate(b.x, b.y);
+  // 阴影
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   roundRect(ctx, -h + 2, -h + 4, h * 2, h * 2, 10);
   ctx.fill();
-
-  ctx.fillStyle = SIDE_DIM[b.side];
-  roundRect(ctx, -h, -h, h * 2, h * 2, 10);
-  ctx.fill();
-  ctx.strokeStyle = SIDE[b.side];
-  ctx.lineWidth = 2.5;
-  if (constructing) ctx.setLineDash([7, 5]);
-  roundRect(ctx, -h, -h, h * 2, h * 2, 10);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // 主基地/金矿的地面光晕：远景下也能一眼识别重要建筑；金矿再叠一层金色小光晕
-  if (!constructing && (b.type === 'hq' || b.type === 'mine')) {
-    const gl = ctx.createRadialGradient(0, 2, 4, 0, 2, h + 16);
-    gl.addColorStop(0, SIDE_DIM[b.side]);
-    gl.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gl;
-    ctx.fillRect(-(h + 16), -(h + 14), (h + 16) * 2, (h + 16) * 2 + 8);
-    if (b.type === 'mine') {
-      const gl2 = ctx.createRadialGradient(0, 4, 2, 0, 4, h * 0.62);
-      gl2.addColorStop(0, 'rgba(240,194,78,0.10)');
-      gl2.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = gl2;
-      ctx.fillRect(-h * 0.62, -h * 0.62, h * 1.24, h * 1.24 + 6);
-    }
-  }
-
-  const pulse = 1 + 0.06 * Math.sin(time * 2.5 + b.id);
   if (constructing) {
-    // 施工中：脚手架 + 进度条
-    ctx.strokeStyle = 'rgba(226,232,240,0.5)';
+    // 施工：虚线地台 + 真脚手架（四柱双梁）+ 进度
+    ctx.fillStyle = SIDE_DIM[b.side];
+    roundRect(ctx, -h, -h, h * 2, h * 2, 10);
+    ctx.fill();
+    ctx.strokeStyle = SIDE[b.side];
     ctx.lineWidth = 2;
+    ctx.setLineDash([7, 5]);
+    roundRect(ctx, -h, -h, h * 2, h * 2, 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const p = h - 5;
+    ctx.strokeStyle = 'rgba(107,74,42,0.95)';
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
-    ctx.moveTo(-h * 0.55, -h * 0.45);
-    ctx.lineTo(h * 0.55, h * 0.45);
-    ctx.moveTo(h * 0.55, -h * 0.45);
-    ctx.lineTo(-h * 0.55, h * 0.45);
+    for (const [px, py] of [[-p, -p], [p, -p], [-p, p], [p, p]] as const) {
+      ctx.moveTo(px, py - 7);
+      ctx.lineTo(px, py + 4);
+    }
+    ctx.moveTo(-p, -p + 3);
+    ctx.lineTo(p, -p + 3);
+    ctx.moveTo(-p, p - 5);
+    ctx.lineTo(p, p - 5);
     ctx.stroke();
     const k = 1 - b.buildT / BUILDING_DEFS[b.type].buildTime;
     ctx.fillStyle = C.hpBack;
@@ -832,316 +1207,24 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
     ctx.fillStyle = '#fbbf24';
     ctx.fillRect(-h + 6, h - 10, (h - 6) * 2 * k, 5);
   } else {
-    switch (b.type) {
-      case 'hq': {
-        // 低血量警示脉冲（保留）
-        if (b.hp < b.maxHp * 0.4) {
-          ctx.save();
-          ctx.globalAlpha = 0.5 + 0.3 * Math.sin(time * 6);
-          ctx.shadowColor = '#f87171';
-          ctx.shadowBlur = 18;
-          ctx.strokeStyle = '#f87171';
-          ctx.lineWidth = 3;
-          roundRect(ctx, -h + 2, -h + 2, h * 2 - 4, h * 2 - 4, 10);
-          ctx.stroke();
-          ctx.restore();
-        }
-        // 旋转光环（金色虚线圆，保留）
-        ctx.save();
-        ctx.rotate(time * 0.8);
-        ctx.setLineDash([9, 7]);
-        ctx.strokeStyle = 'rgba(201,162,39,0.5)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(0, 0, h + 3, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-        ctx.save();
-        ctx.scale(pulse, pulse);
-        // 双侧塔楼（石砌）
-        ctx.fillStyle = '#857f71';
-        ctx.fillRect(-21, -9, 9, 23);
-        ctx.fillRect(12, -9, 9, 23);
-        ctx.strokeStyle = 'rgba(40,34,24,0.35)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(-20, 0); ctx.lineTo(-13, 0);
-        ctx.moveTo(13, 0); ctx.lineTo(20, 0);
-        ctx.moveTo(-20, 8); ctx.lineTo(-13, 8);
-        ctx.moveTo(13, 8); ctx.lineTo(20, 8);
-        ctx.stroke();
-        // 主堡 + 石缝
-        ctx.fillStyle = '#a29c8e';
-        ctx.fillRect(-12, -7, 24, 25);
-        ctx.beginPath();
-        ctx.moveTo(-11, 1); ctx.lineTo(11, 1);
-        ctx.moveTo(-11, 9); ctx.lineTo(11, 9);
-        ctx.moveTo(-5, -3); ctx.lineTo(-5, 1);
-        ctx.moveTo(6, 1); ctx.lineTo(6, 9);
-        ctx.stroke();
-        // 右缘暗面（体积）
-        ctx.fillStyle = 'rgba(30,24,16,0.14)';
-        ctx.fillRect(6, -7, 6, 25);
-        // 雉堞：主堡 + 双塔
-        ctx.fillStyle = '#b5afa0';
-        ctx.fillRect(-12, -11, 24, 5);
-        ctx.fillRect(-21, -13, 9, 5);
-        ctx.fillRect(12, -13, 9, 5);
-        ctx.fillStyle = '#6e695e';
-        for (const nx of [-8.5, -2.5, 3.5]) ctx.fillRect(nx, -11, 2.2, 5);
-        ctx.fillRect(-16.5, -13, 2, 5);
-        ctx.fillRect(-11.5, -13, 2, 5);
-        ctx.fillRect(16.5, -13, 2, 5);
-        ctx.fillRect(10.5, -13, 2, 5);
-        // 拱门 + 门闸
-        ctx.fillStyle = 'rgba(26,20,12,0.82)';
-        ctx.beginPath();
-        ctx.moveTo(-4.5, 18);
-        ctx.lineTo(-4.5, 14);
-        ctx.arc(0, 14, 4.5, Math.PI, 0);
-        ctx.lineTo(4.5, 18);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(201,162,39,0.55)';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(-1.5, 15); ctx.lineTo(-1.5, 18);
-        ctx.moveTo(1.5, 15); ctx.lineTo(1.5, 18);
-        ctx.stroke();
-        // 箭窗
-        ctx.fillStyle = 'rgba(26,20,12,0.7)';
-        ctx.fillRect(-7.2, -4, 1.6, 3.5);
-        ctx.fillRect(5.6, -4, 1.6, 3.5);
-        // 旗帜（右塔，远景辨认阵营）
-        ctx.strokeStyle = SIDE_DARK[b.side];
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(16.5, -13);
-        ctx.lineTo(16.5, -25);
-        ctx.stroke();
-        const fw = Math.sin(time * 4.4 + b.id) * 1.4;
-        ctx.fillStyle = SIDE[b.side];
-        ctx.beginPath();
-        ctx.moveTo(16.5, -25);
-        ctx.quadraticCurveTo(22.5, -23.4 + fw, 27.5, -20.8 + fw);
-        ctx.lineTo(16.5, -17.4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        break;
-      }
-      case 'mine': {
-        // 土堆 + 坑口：金矿是从土里挖出来的
-        ctx.fillStyle = '#7d7566';
-        ctx.beginPath();
-        ctx.ellipse(0, 7, 15, 7.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.beginPath();
-        ctx.ellipse(-4, 3.5, 8, 3.4, -0.25, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#221a0e';
-        ctx.beginPath();
-        ctx.ellipse(0, 3.5, 6.5, 4.2, 0, 0, Math.PI * 2);
-        ctx.fill();
-        // 木井架：两腿 + 横梁
-        ctx.strokeStyle = '#6b4a2a';
-        ctx.lineWidth = 2.4;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(-8, 12);
-        ctx.lineTo(-3.5, -8);
-        ctx.moveTo(8, 12);
-        ctx.lineTo(3.5, -8);
-        ctx.stroke();
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-6, -6.5);
-        ctx.lineTo(6, -6.5);
-        ctx.stroke();
-        ctx.lineCap = 'butt';
-        // 金块堆（坑口前）
-        ctx.fillStyle = '#f0c24e';
-        for (const [gx, gy, gr] of [[-7, 11, 3.6], [6, 12, 3.2], [0, 13.5, 3]] as const) {
-          ctx.beginPath();
-          ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = '#ffe9a8';
-        for (const [gx, gy] of [[-8, 10], [5, 11], [-1, 12.6]] as const) {
-          ctx.beginPath();
-          ctx.arc(gx, gy, 1.1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        // 闪光（保留）
-        ctx.save();
-        ctx.rotate(time * 1.6);
-        ctx.strokeStyle = 'rgba(255,233,168,0.8)';
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.moveTo(12, -4);
-        ctx.lineTo(15, -4);
-        ctx.moveTo(0, -13);
-        ctx.lineTo(0, -16);
-        ctx.stroke();
-        ctx.restore();
-        break;
-      }
-      case 'barracks': {
-        // 拉绳 + 基座
-        ctx.strokeStyle = 'rgba(60,48,30,0.5)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, -12);
-        ctx.lineTo(-19, 12);
-        ctx.moveTo(0, -12);
-        ctx.lineTo(19, 12);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.beginPath();
-        ctx.ellipse(0, 13, 17, 4.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-        // 帐篷（阵营色帆布）
-        ctx.fillStyle = SIDE[b.side];
-        ctx.beginPath();
-        ctx.moveTo(-16, 12);
-        ctx.lineTo(0, -13);
-        ctx.lineTo(16, 12);
-        ctx.closePath();
-        ctx.fill();
-        // 背光面 + 受光面（体积）
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.beginPath();
-        ctx.moveTo(0, -13);
-        ctx.lineTo(16, 12);
-        ctx.lineTo(4, 12);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.14)';
-        ctx.beginPath();
-        ctx.moveTo(0, -13);
-        ctx.lineTo(-16, 12);
-        ctx.lineTo(-7, 12);
-        ctx.closePath();
-        ctx.fill();
-        // 顶脊奶白条纹（保留）
-        ctx.strokeStyle = 'rgba(245,236,210,0.55)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-13, 7.5);
-        ctx.lineTo(-1.5, -11);
-        ctx.moveTo(2.5, -10.4);
-        ctx.lineTo(13, 7.5);
-        ctx.stroke();
-        // 敞开的门帘
-        ctx.fillStyle = 'rgba(20,14,8,0.6)';
-        ctx.beginPath();
-        ctx.moveTo(0, -3);
-        ctx.lineTo(-4.5, 12);
-        ctx.lineTo(4.5, 12);
-        ctx.closePath();
-        ctx.fill();
-        // 中柱（保留）
-        ctx.strokeStyle = 'rgba(20,14,8,0.55)';
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        ctx.moveTo(0, -13);
-        ctx.lineTo(0, 12);
-        ctx.stroke();
-        // 旗帜
-        ctx.strokeStyle = SIDE_DARK[b.side];
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-h + 8, -h + 22);
-        ctx.lineTo(-h + 8, -h + 6);
-        ctx.stroke();
-        const fw = Math.sin(time * 5 + b.id) * 1.5;
-        ctx.fillStyle = SIDE[b.side];
-        ctx.beginPath();
-        ctx.moveTo(-h + 8, -h + 6);
-        ctx.quadraticCurveTo(-h + 15, -h + 8 + fw, -h + 21, -h + 10 + fw);
-        ctx.lineTo(-h + 8, -h + 14);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'tower': {
-        // 基座
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.beginPath();
-        ctx.ellipse(0, 13, 11, 4, 0, 0, Math.PI * 2);
-        ctx.fill();
-        // 石砌塔身（梯形，加高）
-        ctx.fillStyle = '#a29c8e';
-        ctx.beginPath();
-        ctx.moveTo(-8.5, 13);
-        ctx.lineTo(-6, -7);
-        ctx.lineTo(6, -7);
-        ctx.lineTo(8.5, 13);
-        ctx.closePath();
-        ctx.fill();
-        // 右缘暗面（体积）
-        ctx.fillStyle = 'rgba(30,24,16,0.14)';
-        ctx.beginPath();
-        ctx.moveTo(2, -7);
-        ctx.lineTo(6, -7);
-        ctx.lineTo(8.5, 13);
-        ctx.lineTo(3.5, 13);
-        ctx.closePath();
-        ctx.fill();
-        // 石缝
-        ctx.strokeStyle = 'rgba(40,34,24,0.35)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(-6.8, 5);
-        ctx.lineTo(7.2, 5);
-        ctx.moveTo(-5.8, -1);
-        ctx.lineTo(6.2, -1);
-        ctx.moveTo(-6.4, 2);
-        ctx.lineTo(-3.4, 2);
-        ctx.moveTo(4.4, 8);
-        ctx.lineTo(7.4, 8);
-        ctx.stroke();
-        // 雉堞
-        ctx.fillStyle = '#b5afa0';
-        ctx.fillRect(-7.5, -12, 15, 5);
-        ctx.fillStyle = '#6e695e';
-        ctx.fillRect(-3.2, -12, 2, 5);
-        ctx.fillRect(3.4, -12, 2, 5);
-        // 箭窗
-        ctx.fillStyle = 'rgba(26,20,12,0.75)';
-        ctx.fillRect(-0.8, -4.5, 1.6, 4);
-        // 追踪炮管（保留）
-        ctx.save();
-        ctx.rotate(b.facing);
-        ctx.fillStyle = SIDE_DARK[b.side];
-        ctx.fillRect(0, -1.6, 16, 3.2);
-        ctx.restore();
-        ctx.fillStyle = SIDE_DARK[b.side];
-        ctx.beginPath();
-        ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-        // 刚开火的枪口焰
-        if (b.cd > (BUILDING_DEFS.tower.weapon?.cooldown ?? 1) - 0.1) {
-          ctx.save();
-          ctx.rotate(b.facing);
-          ctx.fillStyle = 'rgba(253,230,138,0.95)';
-          ctx.beginPath();
-          ctx.arc(19, 0, 4.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-        break;
-      }
-    }
+    // 静态主体走精灵缓存（含损伤档）；动态层（旗/焰/环/炮管/冒烟）实时绘制
+    const dmg = b.hp < b.maxHp * 0.33 ? 2 : b.hp < b.maxHp * 0.66 ? 1 : 0;
+    const S = h + 14;
+    const sprite = getSprite(`bld:${b.type}:${b.side}:${dmg}`, S * 2, S * 2, g => {
+      g.translate(S, S);
+      paintBuildingStatic(g, b.type, b.side, h, dmg);
+    });
+    ctx.drawImage(sprite, -S, -S, S * 2, S * 2);
+    if (dmg >= 1) smokePuffs(ctx, dmg === 2 ? -h * 0.3 : h * 0.25, -h * 0.7, time * 0.5 + b.id);
+    drawBuildingDynamic(ctx, b, h, time);
+    // 训练进度
     if (b.type === 'barracks' && b.trainType) {
-      // 训练进度
       const def = UNIT_DEFS[b.trainType];
-      const k = 1 - b.trainT / def.trainTime;
+      const kk = 1 - b.trainT / def.trainTime;
       ctx.fillStyle = C.hpBack;
       ctx.fillRect(-h + 6, h - 9, (h - 6) * 2, 4.5);
       ctx.fillStyle = '#e8e2c4';
-      ctx.fillRect(-h + 6, h - 9, (h - 6) * 2 * k, 4.5);
+      ctx.fillRect(-h + 6, h - 9, (h - 6) * 2 * kk, 4.5);
     }
     if (b.hp < b.maxHp) hpBar(ctx, 0, -h - 8, h * 1.6, b.hp, b.maxHp);
   }
