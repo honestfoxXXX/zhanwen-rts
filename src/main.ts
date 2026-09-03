@@ -9,7 +9,7 @@ import * as minimap from './render/minimap';
 import { Input } from './input/input';
 import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
-import { initAudio, isMuted, play, toggleMute } from './sound';
+import { initAudio, isMuted, play, setBattleIntensity, toggleMute, toggleMusic } from './sound';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const frame = document.getElementById('frame') as HTMLDivElement;
@@ -108,6 +108,7 @@ const hud = new Hud({
   placeNo: () => { input.cancelMode(); },
   desel: () => { input.clearSelection(); },
   sound: () => toggleMute(),
+  music: () => toggleMusic(),
 });
 
 const input = new Input(canvas, cam, () => world, ui, {
@@ -236,9 +237,11 @@ function volAt(x: number, y: number): number {
 function drainEvents(): void {
   if (!world) return;
   let ended = false;
+  let combat = 0;
   for (const e of world.events) {
     switch (e.type) {
       case 'shot':
+        combat++;
         if (e.x !== undefined && e.y !== undefined) {
           // 近战没有弹道，用一道挥砍弧线表现，与远程的枪口闪光区分开
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
@@ -251,6 +254,7 @@ function drainEvents(): void {
         }
         break;
       case 'die':
+        combat += 2;
         if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
           fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
         }
@@ -290,6 +294,7 @@ function drainEvents(): void {
     }
   }
   world.events.length = 0;
+  setBattleIntensity(Math.min(1, combat / 10));
   if (ended && world.gameOver && state !== 'over') {
     state = 'over';
     input.cancelMode();

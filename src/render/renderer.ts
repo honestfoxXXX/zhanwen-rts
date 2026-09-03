@@ -660,13 +660,21 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   const units = [...w.units].sort((a, b) => a.y - b.y);
   for (const u of units) drawUnit(ctx, u, w.time, sel.has(u.id));
 
-  // 弹道：箭矢 / 炮弹
+  // 弹道：箭矢 / 炮弹（高度弧线 + 地面影子）
   for (const p of w.projectiles) {
     const dx = p.tx - p.sx, dy = p.ty - p.sy;
-    const d = Math.hypot(dx, dy) || 1;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
     const ux = dx / d, uy = dy / d;
+    const k = Math.max(0, Math.min(1, p.t / p.dur));
+    const lift = Math.sin(k * Math.PI) * (p.arrow ? 9 : 6);
+    // 地面影子
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 2, 2.6 - lift * 0.09, 1.4 - lift * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(0, -lift);
     if (p.arrow) {
-      // 箭矢
       ctx.strokeStyle = SIDE[p.side];
       ctx.lineWidth = 1.6;
       ctx.beginPath();
@@ -681,7 +689,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       ctx.fillStyle = '#e2e8f0';
       ctx.fill();
     } else {
-      // 炮弹
       const tail = Math.min(16, d * 0.3);
       ctx.strokeStyle = p.big ? 'rgba(251,191,36,0.8)' : SIDE[p.side];
       ctx.globalAlpha = 0.85;
@@ -699,6 +706,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       ctx.fill();
       ctx.shadowBlur = 0;
     }
+    ctx.restore();
   }
 
   // 行军扬尘：更新 + 绘制（土色渐大渐淡）

@@ -14,7 +14,14 @@ let ac: AudioContext | null = null;
 let master: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
 let muted = false;
+let musicOn = true;
+let battleLevel = 0; // 0~1 战斗激烈度（主循环按事件密度更新）
+let windGain: GainNode | null = null;
+let musicTimer: number | null = null;
+let birdTimer: number | null = null;
 const lastPlay = new Map<string, number>();
+
+try { musicOn = localStorage.getItem('zw_music') !== '0'; } catch { /* ignore */ }
 
 try { muted = localStorage.getItem('zw_mute') === '1'; } catch { /* ignore */ }
 
@@ -38,9 +45,117 @@ export function initAudio(): void {
       noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
       const data = noiseBuf.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      startAmbient();
+      startMusic();
     }
   }
   if (ac && ac.state === 'suspended') void ac.resume();
+}
+
+/** 环境风（低通粉噪循环）+ 白日鸟鸣；战斗激烈度压低环境 */
+function startAmbient(): void {
+  if (!ac || !master || windGain) return;
+  const mm = master;
+  const src = ac.createBufferSource();
+  src.buffer = noiseBuf;
+  src.loop = true;
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 320;
+  const wg = ac.createGain();
+  wg.gain.value = 0.03;
+  src.connect(lp); lp.connect(wg); wg.connect(mm);
+  windGain = wg;
+  src.start();
+  const m = master;
+  const chirp = (): void => {
+    if (muted || musicOn === false || battleLevel > 0.5 || !ac || !m) return;
+    const t0 = ac.currentTime + Math.random() * 0.3;
+    const f0 = 1900 + Math.random() * 900;
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(f0 * 1.35, t0 + 0.05);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.9, t0 + 0.1);
+    g.gain.setValueAtTime(0.018, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+    o.connect(g); g.connect(m);
+    o.start(t0); o.stop(t0 + 0.14);
+  };
+  birdTimer = window.setInterval(() => {
+    if (Math.random() < 0.6) { chirp(); if (Math.random() < 0.4) setTimeout(chirp, 160); }
+  }, 4200);
+}
+
+/** 战斗激烈度（0~1）：由主循环按事件密度更新；压低环境声 */
+export function setBattleIntensity(v: number): void {
+  battleLevel = Math.max(0, Math.min(1, v));
+  const wg = windGain;
+  if (wg && ac) wg.gain.setTargetAtTime(0.03 * (1 - battleLevel * 0.75), ac.currentTime, 0.4);
+}
+
+/** 拨弦音色（噪声突发 + 调谐带通 = 简化 Karplus-Strong） */
+function pluck(freq: number, vol: number, when: number): void {
+  if (!ac || !master) return;
+  const src = ac.createBufferSource();
+  src.buffer = noiseBuf;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = freq;
+  bp.Q.value = 9;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(vol, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.7);
+  src.connect(bp); bp.connect(g); g.connect(master);
+  src.start(when); src.stop(when + 0.72);
+}
+
+/** 低频战鼓 */
+function drum(when: number, vol: number): void {
+  if (!ac || !master) return;
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(82, when);
+  o.frequency.exponentialRampToValueAtTime(48, when + 0.16);
+  g.gain.setValueAtTime(vol, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.22);
+  o.connect(g); g.connect(master);
+  o.start(when); o.stop(when + 0.24);
+}
+
+// D 多利亚五声：生成式旋律在白名单内随机走步
+const SCALE = [146.83, 174.61, 196.0, 220.0, 261.63, 293.66];
+let musicIdx = 2;
+let musicNext = 0;
+
+function startMusic(): void {
+  if (musicTimer !== null) return;
+  musicTimer = window.setInterval(() => {
+    if (!ac || !master || muted || !musicOn) return;
+    const now = ac.currentTime;
+    if (musicNext < now) musicNext = now + 0.1;
+    const battle = battleLevel > 0.35;
+    while (musicNext < now + 0.6) {
+      // 旋律走步：相邻音级随机上下
+      musicIdx = Math.max(0, Math.min(SCALE.length - 1, musicIdx + (Math.random() < 0.5 ? -1 : 1)));
+      pluck(SCALE[musicIdx], musicOn ? 0.05 : 0.04, musicNext);
+      if (battle) {
+        drum(musicNext + 0.42, 0.06);
+        if (Math.random() < 0.5) pluck(SCALE[Math.max(0, SCALE.length - 2)], 0.03, musicNext + 0.21);
+      }
+      musicNext += battle ? 0.85 : 2.4;
+    }
+  }, 200);
+}
+
+export function isMusicOn(): boolean { return musicOn; }
+
+export function toggleMusic(): string {
+  musicOn = !musicOn;
+  try { localStorage.setItem('zw_music', musicOn ? '1' : '0'); } catch { /* ignore */ }
+  return musicOn ? '开' : '关';
 }
 
 export function isMuted(): boolean { return muted; }
@@ -93,7 +208,7 @@ function noise(dur: number, f0: number, f1: number, vol: number, delay = 0, type
   src.stop(t0 + dur + 0.02);
 }
 
-export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'lose' | 'draw' | 'ui' | 'deny' | 'move' | 'alarm';
+export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'lose' | 'draw' | 'ui' | 'deny' | 'move' | 'alarm' | 'clash' | 'siege';
 
 /** vol：0~1 的距离衰减系数，由调用方按事件与屏幕的距离计算；UI 音恒为 1 */
 export function play(name: SoundName, vol = 1): void {
@@ -139,6 +254,15 @@ export function play(name: SoundName, vol = 1): void {
       break;
     case 'deny':
       tone(230, 150, 0.14, 'square', 0.055 * v);
+      break;
+    case 'clash': // 剑刃交锋：金属 ring
+      tone(jitter(2350), jitter(1700), 0.07, 'square', 0.02 * v);
+      tone(jitter(3600), jitter(2600), 0.05, 'sine', 0.028 * v);
+      break;
+    case 'siege': // 投石三段：闷响 → 风声 → 碎裂
+      tone(70, 42, 0.3, 'sine', 0.2 * v);
+      noise(0.35, 900, 300, 0.12 * v, 0.28);
+      noise(0.3, 500, 120, 0.1 * v, 1.1);
       break;
     case 'ui':
       tone(jitter(620), 820, 0.05, 'sine', 0.05 * v);

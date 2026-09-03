@@ -65,7 +65,20 @@ export class Effects {
         vx: (i - 1) * 14, vy: -26 - i * 8,
       });
     }
+    if (big) {
+      // 大建筑坍塌：大碎块抛散 + 升腾尘云
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + Math.random();
+        const sp = 60 + Math.random() * 80;
+        this.add({ kind: 'debris', x, y, dur: 0.8, r: 4 + Math.random() * 3, color: '#5a5248', big, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40 });
+      }
+      for (let i = 0; i < 3; i++) {
+        this.add({ kind: 'smoke', x: x + (Math.random() - 0.5) * 30, y: y - 6, dur: 1.3, r: 14 + Math.random() * 10, color: 'rgba(148,163,184,0.5)', big, vx: (Math.random() - 0.5) * 20, vy: -20 - Math.random() * 12 });
+      }
+    }
   }
+
+
 
   /** 弹道命中点的火花：几条放射短线，一闪而过 */
   spark(x: number, y: number, side: Side): void {

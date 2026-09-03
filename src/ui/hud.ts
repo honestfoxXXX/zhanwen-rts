@@ -31,6 +31,7 @@ export interface HudHooks {
   hold: () => void;
   retreat: () => void;
   sound: () => string;
+  music: () => string;
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -102,6 +103,9 @@ export class Hud {
     });
     this.els.sound.addEventListener('click', () => {
       this.els.sound.textContent = `音效：${hooks.sound()}`;
+    });
+    $('btnMusic').addEventListener('click', () => {
+      $('btnMusic').textContent = `音乐：${hooks.music()}`;
     });
   }
 
