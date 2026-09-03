@@ -2,10 +2,10 @@ import {
   BUILDING_DEFS, COLS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
 import type { MapDef } from '../core/config';
-import type { Building, Unit, World } from '../core/types';
+import type { Building, Unit, UnitType, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
-import { drawUnitBody, SIDE_DARK, SIDE_DIM, SIDE_FILL } from './shapes';
+import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SHAPES } from './shapes';
 import { getSprite } from './spriteCache';
 import type { BuildingType, Side } from '../core/types';
 
@@ -701,6 +701,33 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     }
   }
 
+  // 行军扬尘：更新 + 绘制（土色渐大渐淡）
+  {
+    const dt = dustLastTime < 0 ? 0 : Math.max(0, Math.min(0.25, w.time - dustLastTime));
+    dustLastTime = w.time;
+    for (const u of w.units) {
+      if (u.dead || u.path.length === 0) continue;
+      if (Math.random() < dt * 2.2) {
+        dust.push({ x: u.x + (Math.random() - 0.5) * 8, y: u.y + (Math.random() - 0.5) * 6 + 4, t: 0, r: 1.6 + Math.random() * 1.8 });
+      }
+    }
+    for (let i = dust.length - 1; i >= 0; i--) {
+      const d = dust[i];
+      d.t += dt;
+      d.y -= dt * 6;
+      if (d.t >= 0.7) dust.splice(i, 1);
+    }
+    if (dust.length) {
+      for (const d of dust) {
+        ctx.globalAlpha = 0.3 * (1 - d.t / 0.7);
+        ctx.fillStyle = '#b9a77f';
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.r + d.t * 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
   fxList.draw(ctx);
 
   // 放置幽灵
@@ -765,18 +792,51 @@ function hpBar(ctx: CanvasRenderingContext2D, x: number, y: number, width: numbe
   ctx.fillRect(x - width / 2, y, width * k, h);
 }
 
+// 单位精灵缓存：静态本体烘焙一次，每帧 blit；徽记/盔羽不随朝向旋转，另行叠加
+const unitSprites = new Map<string, HTMLCanvasElement>();
+function unitSprite(type: UnitType, side: Side): { c: HTMLCanvasElement; s: number } {
+  const key = `${type}:${side}`;
+  const s = (UNIT_DEFS[type].radius * UNIT_SHAPES[type].rMul) * 2.2 + 10; // 覆盖武器道具与底环
+  let c = unitSprites.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = Math.ceil(s * 2 * 2);
+    c.height = Math.ceil(s * 2 * 2);
+    const g = c.getContext('2d') as CanvasRenderingContext2D;
+    g.scale(2, 2);
+    g.translate(s, s);
+    drawUnitStatic(g, type, side, UNIT_DEFS[type].radius);
+    unitSprites.set(key, c);
+  }
+  return { c, s };
+}
+
+// 行军扬尘（纯视觉）：移动中的单位按概率扬起土尘
+const dust: { x: number; y: number; t: number; r: number }[] = [];
+let dustLastTime = -1;
+
 function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected = false): void {
   const def = UNIT_DEFS[u.type];
   const r = def.radius;
   const justFired = u.cd > def.cooldown - 0.12;
   const recoilX = justFired ? -Math.cos(u.facing) * 2 : 0;
   const recoilY = justFired ? -Math.sin(u.facing) * 2 : 0;
+  const moving = u.path.length > 0;
+  const bob = moving ? Math.sin(time * 11 + u.id * 1.7) * UNIT_SHAPES[u.type].bob : 0;
+  const breathe = 1 + 0.025 * Math.sin(time * 3 + u.id * 2.1);
+
+  // 精灵 blit（本体随朝向旋转 + 呼吸缩放）
+  const { c: spr, s } = unitSprite(u.type, u.side);
   ctx.save();
-  ctx.translate(u.x + recoilX, u.y + recoilY);
-  // 轮廓形状 + 徽记统一由 shapes.ts 提供：步兵=圆盾 / 弓手=箭头 / 重装=骑士盾
-  drawUnitBody(ctx, u.type, u.side, r, u.facing, {
-    moving: u.path.length > 0, t: time, phase: u.id * 1.7,
-  });
+  ctx.translate(u.x + recoilX, u.y + recoilY + bob);
+  ctx.rotate(u.facing);
+  ctx.scale(breathe, breathe);
+  ctx.drawImage(spr, -s, -s, s * 2, s * 2);
+  ctx.restore();
+  // 徽记 + 盔羽（不随朝向旋转）
+  ctx.save();
+  ctx.translate(u.x + recoilX, u.y + recoilY + bob);
+  drawUnitDecals(ctx, u.type, u.side, r);
   ctx.restore();
   // 选中的部队常驻血条，方便在混战里掌握残血单位
   if (selected || u.hp < u.maxHp) hpBar(ctx, u.x, u.y - r - 8, r * 2, u.hp, u.maxHp);

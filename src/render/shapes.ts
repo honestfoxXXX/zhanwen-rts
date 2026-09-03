@@ -41,6 +41,156 @@ export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
   heavy: { shape: 'heater', rMul: 1.18, emblem: 'cross', bob: 0 },
 };
 
+/**
+ * 单位静态本体（面向 +x 的标准姿态）：阴影/底环/剪影/明暗/道具/描边。
+ * 供精灵缓存烘焙与 HUD 图标共用；徽记与盔羽由调用方另行不旋转叠加。
+ */
+export function drawUnitStatic(
+  g: CanvasRenderingContext2D,
+  type: UnitType,
+  side: Side,
+  r: number,
+): void {
+  const def = UNIT_SHAPES[type];
+  const vr = r * def.rMul;
+  // 阴影
+  g.fillStyle = 'rgba(0,0,0,0.32)';
+  g.beginPath();
+  g.ellipse(0, vr * 0.7, vr * 0.85, vr * 0.38, 0, 0, Math.PI * 2);
+  g.fill();
+  // 阵营底环：尺寸缩到 10px 量级时，阵营主要靠它辨认
+  g.strokeStyle = SIDE_RING[side];
+  g.lineWidth = 2;
+  g.globalAlpha = 0.6;
+  g.beginPath();
+  g.arc(0, 0, vr + 2.6, 0, Math.PI * 2);
+  g.stroke();
+  g.globalAlpha = 1;
+  shapePath(g, def.shape, vr);
+  g.fillStyle = SIDE_FILL[side];
+  g.fill();
+  // 剪影内打光：左上高光 + 右下暗面，让平涂色块有了体积
+  g.save();
+  g.clip();
+  g.fillStyle = 'rgba(255,255,255,0.34)';
+  g.beginPath();
+  g.ellipse(-vr * 0.34, -vr * 0.42, vr * 0.72, vr * 0.55, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = 'rgba(2,6,16,0.22)';
+  g.beginPath();
+  g.ellipse(vr * 0.38, vr * 0.5, vr * 0.8, vr * 0.6, -0.6, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+  g.strokeStyle = SIDE_DARK[side];
+  g.lineWidth = 2;
+  shapePath(g, def.shape, vr);
+  g.stroke();
+  // 职业道具（随朝向旋转）：剑盾 / 弓箭 / 骑枪 —— 侧影 + 道具双通道读兵种
+  const steel = '#e3e8f0', steelDark = '#3d434f', wood = '#6b4a2a';
+  if (type === 'infantry') {
+    g.strokeStyle = steelDark;
+    g.lineWidth = 2.8;
+    g.beginPath();
+    g.moveTo(vr * 0.5, 0);
+    g.lineTo(vr * 1.5, 0);
+    g.stroke();
+    g.strokeStyle = steel;
+    g.lineWidth = 1.3;
+    g.beginPath();
+    g.moveTo(vr * 0.55, 0);
+    g.lineTo(vr * 1.45, 0);
+    g.stroke();
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(vr * 0.62, -2.6);
+    g.lineTo(vr * 0.62, 2.6);
+    g.stroke();
+    g.fillStyle = '#8a6f42';
+    g.beginPath();
+    g.arc(0, vr * 0.62, vr * 0.42, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 1.4;
+    g.stroke();
+    g.fillStyle = 'rgba(255,244,220,0.85)';
+    g.beginPath();
+    g.arc(0, vr * 0.62, vr * 0.14, 0, Math.PI * 2);
+    g.fill();
+  } else if (type === 'archer') {
+    g.strokeStyle = wood;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(vr * 0.42, 0, vr * 0.85, -1.05, 1.05);
+    g.stroke();
+    const bx = vr * 0.42 + vr * 0.85 * Math.cos(1.05);
+    const by = vr * 0.85 * Math.sin(1.05);
+    g.strokeStyle = 'rgba(244,234,214,0.85)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(bx, -by);
+    g.lineTo(bx, by);
+    g.stroke();
+    g.strokeStyle = steel;
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(vr * 0.1, 0);
+    g.lineTo(vr * 1.1, 0);
+    g.stroke();
+  } else {
+    g.strokeStyle = '#5d4327';
+    g.lineWidth = 2.6;
+    g.beginPath();
+    g.moveTo(-vr * 0.2, 0);
+    g.lineTo(vr * 1.45, 0);
+    g.stroke();
+    g.fillStyle = steel;
+    g.beginPath();
+    g.moveTo(vr * 1.4, -1.6);
+    g.lineTo(vr * 1.9, 0);
+    g.lineTo(vr * 1.4, 1.6);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(vr * 0.42, -2.2);
+    g.lineTo(vr * 0.42, 2.2);
+    g.stroke();
+  }
+}
+
+/** 单位本体（战场/HUD 通用入口）：道具随朝向旋转，徽记与盔羽不旋转 */
+export function drawUnitBody(
+  g: CanvasRenderingContext2D,
+  type: UnitType,
+  side: Side,
+  r: number,
+  facing: number,
+  opts: UnitDrawOpts = {},
+): void {
+  const def = UNIT_SHAPES[type];
+  const vr = r * def.rMul;
+  const bob = opts.moving && def.bob ? Math.sin((opts.t ?? 0) * 11 + (opts.phase ?? 0)) * def.bob : 0;
+  g.save();
+  g.translate(0, bob);
+  g.save();
+  g.rotate(facing);
+  drawUnitStatic(g, type, side, r);
+  g.restore();
+  // 徽记不随朝向旋转 —— 这是剪影能否稳定辨认的关键
+  drawEmblem(g, def.emblem, vr, side);
+  // 重装盔羽：竖直，不随朝向旋转
+  if (type === 'heavy') {
+    g.strokeStyle = SIDE_DARK[side];
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(0, -vr * 0.95);
+    g.quadraticCurveTo(vr * 0.22, -vr * 1.35, 0, -vr * 1.65);
+    g.stroke();
+  }
+  g.restore();
+}
+
 function shapePath(g: CanvasRenderingContext2D, kind: ShapeKind, r: number): void {
   g.beginPath();
   if (kind === 'circle') {
@@ -102,146 +252,15 @@ function drawEmblem(g: CanvasRenderingContext2D, kind: EmblemKind, vr: number, s
   }
 }
 
-export interface UnitDrawOpts {
-  moving?: boolean;
-  t?: number;      // 世界时间，驱动步行摆动
-  phase?: number;  // 每单位相位，避免整队同步摆动
-}
-
-/** 以原点为中心绘制一个单位（调用方负责 translate） */
-export function drawUnitBody(
+/** 单位徽记 + 盔羽（不随朝向旋转；战场精灵缓存与 HUD 通用） */
+export function drawUnitDecals(
   g: CanvasRenderingContext2D,
   type: UnitType,
   side: Side,
   r: number,
-  facing: number,
-  opts: UnitDrawOpts = {},
 ): void {
-  const def = UNIT_SHAPES[type];
-  const vr = r * def.rMul;
-  const bob = opts.moving && def.bob ? Math.sin((opts.t ?? 0) * 11 + (opts.phase ?? 0)) * def.bob : 0;
-
-  // 阴影
-  g.fillStyle = 'rgba(0,0,0,0.32)';
-  g.beginPath();
-  g.ellipse(0, vr * 0.7, vr * 0.85, vr * 0.38, 0, 0, Math.PI * 2);
-  g.fill();
-
-  // 阵营底环：尺寸缩到 10px 量级时，阵营主要靠它辨认
-  g.strokeStyle = SIDE_RING[side];
-  g.lineWidth = 2;
-  g.globalAlpha = 0.6;
-  g.beginPath();
-  g.arc(0, 0, vr + 2.6, 0, Math.PI * 2);
-  g.stroke();
-  g.globalAlpha = 1;
-
-  g.save();
-  g.translate(0, bob); // 摆动保持屏幕纵向，不随朝向旋转
-
-  g.save();
-  g.rotate(facing);
-  shapePath(g, def.shape, vr);
-  g.fillStyle = SIDE_FILL[side];
-  g.fill();
-  // 剪影内打光：左上高光 + 右下暗面，让平涂色块有了体积
-  g.save();
-  g.clip();
-  g.fillStyle = 'rgba(255,255,255,0.34)';
-  g.beginPath();
-  g.ellipse(-vr * 0.34, -vr * 0.42, vr * 0.72, vr * 0.55, -0.6, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = 'rgba(2,6,16,0.22)';
-  g.beginPath();
-  g.ellipse(vr * 0.38, vr * 0.5, vr * 0.8, vr * 0.6, -0.6, 0, Math.PI * 2);
-  g.fill();
-  g.restore();
-  g.strokeStyle = SIDE_DARK[side];
-  g.lineWidth = 2;
-  shapePath(g, def.shape, vr);
-  g.stroke();
-
-  // 职业道具（随朝向旋转）：剑盾 / 弓箭 / 骑枪 —— 侧影 + 道具双通道读兵种
-  const steel = '#e3e8f0', steelDark = '#3d434f', wood = '#6b4a2a';
-  if (type === 'infantry') {
-    // 剑：深描边 + 亮刃 + 护手
-    g.strokeStyle = steelDark;
-    g.lineWidth = 2.8;
-    g.beginPath();
-    g.moveTo(vr * 0.5, 0);
-    g.lineTo(vr * 1.5, 0);
-    g.stroke();
-    g.strokeStyle = steel;
-    g.lineWidth = 1.3;
-    g.beginPath();
-    g.moveTo(vr * 0.55, 0);
-    g.lineTo(vr * 1.45, 0);
-    g.stroke();
-    g.lineWidth = 1.6;
-    g.beginPath();
-    g.moveTo(vr * 0.62, -2.6);
-    g.lineTo(vr * 0.62, 2.6);
-    g.stroke();
-    // 侧持圆盾：木盾 + 亮盾心
-    g.fillStyle = '#8a6f42';
-    g.beginPath();
-    g.arc(0, vr * 0.62, vr * 0.42, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = SIDE_DARK[side];
-    g.lineWidth = 1.4;
-    g.stroke();
-    g.fillStyle = 'rgba(255,244,220,0.85)';
-    g.beginPath();
-    g.arc(0, vr * 0.62, vr * 0.14, 0, Math.PI * 2);
-    g.fill();
-  } else if (type === 'archer') {
-    // 弓：木弧 + 弦 + 搭箭
-    g.strokeStyle = wood;
-    g.lineWidth = 2;
-    g.beginPath();
-    g.arc(vr * 0.42, 0, vr * 0.85, -1.05, 1.05);
-    g.stroke();
-    const bx = vr * 0.42 + vr * 0.85 * Math.cos(1.05);
-    const by = vr * 0.85 * Math.sin(1.05);
-    g.strokeStyle = 'rgba(244,234,214,0.85)';
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(bx, -by);
-    g.lineTo(bx, by);
-    g.stroke();
-    g.strokeStyle = steel;
-    g.lineWidth = 1.2;
-    g.beginPath();
-    g.moveTo(vr * 0.1, 0);
-    g.lineTo(vr * 1.1, 0);
-    g.stroke();
-  } else {
-    // 骑枪：长杆 + 钢尖 + 配箍
-    g.strokeStyle = '#5d4327';
-    g.lineWidth = 2.6;
-    g.beginPath();
-    g.moveTo(-vr * 0.2, 0);
-    g.lineTo(vr * 1.45, 0);
-    g.stroke();
-    g.fillStyle = steel;
-    g.beginPath();
-    g.moveTo(vr * 1.4, -1.6);
-    g.lineTo(vr * 1.9, 0);
-    g.lineTo(vr * 1.4, 1.6);
-    g.closePath();
-    g.fill();
-    g.strokeStyle = SIDE_DARK[side];
-    g.lineWidth = 1.4;
-    g.beginPath();
-    g.moveTo(vr * 0.42, -2.2);
-    g.lineTo(vr * 0.42, 2.2);
-    g.stroke();
-  }
-  g.restore();
-
-  // 徽记不随朝向旋转 —— 这是剪影能否稳定辨认的关键
-  drawEmblem(g, def.emblem, vr, side);
-  // 重装盔羽：竖直，不随朝向旋转
+  const vr = r * UNIT_SHAPES[type].rMul;
+  drawEmblem(g, UNIT_SHAPES[type].emblem, vr, side);
   if (type === 'heavy') {
     g.strokeStyle = SIDE_DARK[side];
     g.lineWidth = 2;
@@ -250,7 +269,18 @@ export function drawUnitBody(
     g.quadraticCurveTo(vr * 0.22, -vr * 1.35, 0, -vr * 1.65);
     g.stroke();
   }
-  g.restore();
+}
+
+export interface UnitDrawOpts {
+  moving?: boolean;
+  t?: number;      // 世界时间，驱动步行摆动
+  phase?: number;  // 每单位相位，避免整队同步摆动
+}
+
+export interface UnitDrawOpts {
+  moving?: boolean;
+  t?: number;      // 世界时间，驱动步行摆动
+  phase?: number;  // 每单位相位，避免整队同步摆动
 }
 
 /**
