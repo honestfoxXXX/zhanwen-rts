@@ -17,9 +17,15 @@ export const START_CRYSTAL = 150;
  */
 export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
   // 速度为大图整体 ×1.4（相对速度与战斗配比不变，把行军时间缩回小图节奏）
-  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 84, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, dmgBonus: { archer: 1.5 } },
-  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 90, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, dmgBonus: { heavy: 1.6 } },
-  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 62, radius: 13, range: 14, aggro: 130, damage: 18, cooldown: 1.3, projectileSpeed: 0, dmgBonus: { infantry: 1.5 } },
+  infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 84, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, tier: 1, dmgBonus: { archer: 1.5 } },
+  archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 90, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, tier: 1, dmgBonus: { heavy: 1.6 } },
+  heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 62, radius: 13, range: 14, aggro: 130, damage: 22, cooldown: 1.2, projectileSpeed: 0, tier: 1, dmgBonus: { infantry: 1.5, building: 1.5 } },
+  // T2（军械库）：长枪兵反骑 / 骑士快速袭扰
+  pikeman: { name: '长枪兵', cost: 160, pop: 2, trainTime: 5.5, hp: 140, speed: 66, radius: 9, range: 14, aggro: 130, damage: 15, cooldown: 0.8, projectileSpeed: 0, tier: 2, dmgBonus: { knight: 1.8, heavy: 1.2 } },
+  knight: { name: '骑士', cost: 240, pop: 3, trainTime: 7, hp: 200, speed: 120, radius: 10, range: 12, aggro: 170, damage: 20, cooldown: 0.85, projectileSpeed: 0, tier: 2, dmgBonus: { archer: 1.5 } },
+  // T3（攻城工坊）：投石车破建筑龟缩 / 近卫军人口效率精英
+  catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 10, hp: 280, speed: 46, radius: 12, range: 190, aggro: 190, damage: 45, cooldown: 1.9, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
+  champion: { name: '近卫军', cost: 450, pop: 4, trainTime: 12, hp: 460, speed: 72, radius: 12, range: 14, aggro: 140, damage: 32, cooldown: 1.0, projectileSpeed: 0, tier: 3 },
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
@@ -27,6 +33,9 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   mine: { name: '金矿', cost: 100, hp: 320, buildTime: 5, half: 30, income: 4, weapon: null },
   barracks: { name: '军营', cost: 150, hp: 650, buildTime: 8, half: 30, income: 0, weapon: null },
   tower: { name: '箭塔', cost: 120, hp: 520, buildTime: 6, half: 30, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
+  // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
+  smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null, unlocks: 2 },
+  workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null, unlocks: 3 },
 };
 
 /** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
@@ -35,14 +44,6 @@ export interface SpawnDef {
   build: { x0: number; x1: number; y0: number; y1: number };
 }
 
-/** 河流：平滑折线（世界坐标）+ 浅滩（可通行 crossing）。河流格参与寻路阻挡，浅滩豁免 */
-export interface RiverDef {
-  pts: Vec[];
-  fords: Vec[];
-  width: number; // 水面宽（世界 px）
-}
-
-/** 地图定义 */
 export interface MapDef {
   id: string;
   name: string;
@@ -61,7 +62,7 @@ export interface MapDef {
 
 /**
  * 双人图：对角出生（西南=玩家 / 东北=敌方），关于地图中心点对称 —— 经典 RTS 布局。
- * 两家 HQ 间距 ~4300px（步兵行军 ~72s），两条侧翼路 + 一条中路对角线。
+ * 两家 HQ 间距 ~4300px（步兵行军 ~52s），两条侧翼路 + 一条中路对角线。
  * 建造区 20×20 格贴角，背靠地图边缘，面向中路展开。
  */
 const SPAWNS_2P: SpawnDef[] = [
@@ -128,6 +129,7 @@ function rot3Rocks(cx: number, cy: number, base: [number, number][]): [number, n
   return [...seen.values()];
 }
 
+/** 支持的参战人数 */
 /** 河流：平滑折线（世界坐标）+ 浅滩（可通行 crossing）。河流格参与寻路阻挡，浅滩豁免 */
 export interface RiverDef {
   pts: Vec[];
@@ -135,7 +137,6 @@ export interface RiverDef {
   width: number; // 水面宽（世界 px）
 }
 
-/** 支持的参战人数 */
 export const PLAYER_COUNTS = [2, 3];
 
 /** 2P 共用矿点：8 对中心对称（中央对角双点 + 双侧翼路 + 基本盘 + 边角富矿） */
@@ -279,7 +280,7 @@ export const DIFFICULTY: Record<Difficulty, {
   waveCd: number;   // 两波之间的间隔
   waveMax: number;  // 单波最长持续；到点收兵重整，否则 AI 会无限续攻
   retreat: boolean;
-  weights: Record<UnitType, number>;
+  weights: Partial<Record<UnitType, number>>;
   think: number;
 }> = {
   // 数值经 scripts/balance.ts 无头跑批校准。节奏：1v1 普通 ~4.5 分钟、
@@ -300,8 +301,8 @@ export const DIFFICULTY: Record<Difficulty, {
   },
   hard: {
     // 困难档对参数极度敏感：incomeMult 每加 0.05、waveCd 每减 4 都要重新跑批
-    label: '困难', incomeMult: 1.05, maxMines: 6, maxBarracks: 3, maxTowers: 2,
-    wavePop: 45, waveCd: 60, waveMax: 105, retreat: true,
+    label: '困难', incomeMult: 1.1, maxMines: 6, maxBarracks: 3, maxTowers: 2,
+    wavePop: 42, waveCd: 55, waveMax: 105, retreat: true,
     weights: { infantry: 0.45, archer: 0.3, heavy: 0.25 }, think: 0.5,
   },
 };

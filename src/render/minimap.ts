@@ -74,6 +74,23 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
     g.stroke();
   }
 
+  // 河流 + 渡口标记（渡口=咽喉，玩家要知道在哪）
+  for (const rv of map.rivers ?? []) {
+    g.strokeStyle = 'rgba(70,110,150,0.9)';
+    g.lineWidth = 3;
+    g.lineJoin = 'round';
+    g.beginPath();
+    rv.pts.forEach((p, i) => {
+      const px = r.x + p.x * sx, py = r.y + p.y * sy;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    });
+    g.stroke();
+    g.fillStyle = 'rgba(196,186,150,0.95)';
+    for (const f of rv.fords) {
+      g.fillRect(r.x + f.x * sx - 1.5, r.y + f.y * sy - 1.5, 3, 3);
+    }
+  }
+
   // 岩石地形：雷达上能看出"哪里绕得过去"
   g.fillStyle = '#6d6a63';
   const rw = Math.max(1.2, TILE * sx), rh = Math.max(1.2, TILE * sy);

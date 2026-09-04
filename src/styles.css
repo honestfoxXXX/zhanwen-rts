@@ -163,6 +163,14 @@ button:disabled { opacity: 0.35; cursor: default; }
   font-size: 10px; line-height: 1; padding: 3px 5px;
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
+.card.locked { opacity: 0.4; }
+.card.locked::after {
+  content: '🔒';
+  position: absolute; top: 2px; right: 4px;
+  font-size: 9px;
+}
+.row.hidden { display: none !important; }
+.row { display: flex; gap: 6px; justify-content: center; pointer-events: auto; }
 .card.wide { max-width: 74px; }
 .card.wide span { font-size: 12px; padding: 5px 0; }
 .card.armed { border-color: #c9a227; box-shadow: 0 0 12px rgba(201, 162, 39, 0.35); }

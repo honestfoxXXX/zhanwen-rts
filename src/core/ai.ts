@@ -23,6 +23,10 @@ const COUNTER: Record<UnitType, UnitType> = {
   heavy: 'archer',
   infantry: 'heavy',
   archer: 'infantry',
+  knight: 'pikeman',
+  pikeman: 'knight',
+  catapult: 'knight',
+  champion: 'pikeman',
 };
 
 /** 确定性距离（与 sim 保持一致：不用 Math.hypot） */
@@ -71,7 +75,7 @@ function nextNode(w: World, hq: Building, mineCount: number): CrystalNode | null
 
 /** 侦查：以指数衰减累计所有敌对单位的兵种构成，反映"近期威胁" */
 function updateScout(w: World, side: Side): void {
-  const cnt: Record<UnitType, number> = { infantry: 0, archer: 0, heavy: 0 };
+  const cnt: Record<UnitType, number> = { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0 };
   for (const u of w.units) {
     if (u.dead || u.side === side) continue;
     cnt[u.type]++;
@@ -79,10 +83,26 @@ function updateScout(w: World, side: Side): void {
   for (const t of TYPES) w.ai[side].scout[t] = w.ai[side].scout[t] * 0.9 + cnt[t] * 0.1;
 }
 
-/** 按难度权重抽兵，并对当前主要威胁做针对性加权 */
-function pickUnit(w: World, side: Side, weights: Record<UnitType, number>): UnitType {
+/** 按难度权重抽兵，并对当前主要威胁做针对性加权（缺失兵种权重按 0） */
+function pickUnit(w: World, side: Side, weights: Partial<Record<UnitType, number>>): UnitType {
   const scout = w.ai[side].scout;
-  const wts: Record<UnitType, number> = { ...weights };
+  const hasSmithy = w.buildings.some(b => b.side === side && b.type === 'smithy' && !b.dead && b.buildT <= 0);
+  const hasWorkshop = w.buildings.some(b => b.side === side && b.type === 'workshop' && !b.dead && b.buildT <= 0);
+  const wts = Object.assign(
+    { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0 } as Record<UnitType, number>,
+    weights,
+  );
+  if (hasSmithy) {
+    wts.pikeman += 0.35;
+    wts.knight += 0.4;
+    wts.infantry *= 0.5;
+    wts.archer *= 0.5;
+    wts.heavy *= 0.5;
+  }
+  if (hasWorkshop) {
+    wts.catapult += 0.35;
+    wts.champion += 0.4;
+  }
   const seen = scout.infantry + scout.archer + scout.heavy;
   if (seen >= 3) {
     let dom: UnitType = 'infantry';
@@ -135,6 +155,8 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   const barracksAll = myB.filter(b => b.type === 'barracks');
   const barracks = barracksAll.filter(b => b.buildT <= 0);
   const towers = myB.filter(b => b.type === 'tower');
+  const smithy = myB.find(b => b.type === 'smithy');
+  const workshop = myB.find(b => b.type === 'workshop');
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
   // 96×96 大三角上三方相距 2300+，开局不再贴脸消耗，旧强特调（门槛/间隔/建设缩放）作废；
@@ -191,6 +213,15 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   if (towers.length < maxTowers && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140) {
     const slot = findBuildSlot(w, side, 'tower', TOWER_OFFSETS);
     if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot.x, y: slot.y });
+  }
+  // —— 科技建筑阶梯：军械库（T2）→ 攻城工坊（T3）
+  if (!smithy && mines.length >= 4 && w.crystals[side] >= BUILDING_DEFS.smithy.cost + 100) {
+    const slot = findBuildSlot(w, side, 'smithy', [[-140, 60], [140, 60], [0, 200]]);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'smithy', x: slot.x, y: slot.y });
+  }
+  if (smithy && !workshop && mines.length >= 6 && w.crystals[side] >= BUILDING_DEFS.workshop.cost + 200) {
+    const slot = findBuildSlot(w, side, 'workshop', [[-140, -60], [140, -60], [0, -180]]);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'workshop', x: slot.x, y: slot.y });
   }
 
   // —— 造兵（被压着打时排队更深，靠产能而非操作扳回来）

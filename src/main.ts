@@ -405,5 +405,24 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// 空格：跳到最近交战点/己方军队；C：回到城堡（大图导航）
+window.addEventListener('keydown', e => {
+  if (state !== 'play' || !world) return;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (alert) cam.centerOn(alert.x, alert.y);
+    else {
+      let sx = 0, sy = 0, n = 0;
+      for (const u of world.units) {
+        if (u.side === 0 && !u.dead) { sx += u.x; sy += u.y; n++; }
+      }
+      if (n) cam.centerOn(sx / n, sy / n);
+      else cam.centerOn(world.spawns[0].x, world.spawns[0].y);
+    }
+  } else if (e.key === 'c' || e.key === 'C') {
+    cam.centerOn(world.spawns[0].x, world.spawns[0].y);
+  }
+});
+
 // 阻止移动端双击缩放
 document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });

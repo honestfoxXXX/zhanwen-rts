@@ -547,6 +547,7 @@ export function currentMap(): MapDef { return curMap; }
 
 export interface RenderUI {
   selection: number[];
+  mode: 'none' | 'place' | 'rally' | 'box';
   ghost: GhostInfo;
   boxRect: { x0: number; y0: number; x1: number; y1: number } | null;
 }
@@ -632,6 +633,42 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+
+  // 建造区轮廓（放置模式提示：告诉玩家边界在哪）
+  if (ui.mode === 'place') {
+    const reg = curMap.spawns[0].build;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245,236,210,0.5)';
+    ctx.fillStyle = 'rgba(245,236,210,0.045)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([12, 8]);
+    const rx = reg.x0 * TILE, ry = reg.y0 * TILE;
+    const rw = (reg.x1 - reg.x0 + 1) * TILE, rh = (reg.y1 - reg.y0 + 1) * TILE;
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.strokeRect(rx, ry, rw, rh);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // 军营独立集结点小旗（金角旗，与全局旗区分）
+  for (const b of w.buildings) {
+    if (b.side !== 0 || b.type !== 'barracks' || !b.rally) continue;
+    ctx.save();
+    ctx.strokeStyle = SIDE[0];
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(b.rally.x, b.rally.y);
+    ctx.lineTo(b.rally.x, b.rally.y - 12);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,232,160,0.92)';
+    ctx.beginPath();
+    ctx.moveTo(b.rally.x, b.rally.y - 12);
+    ctx.lineTo(b.rally.x + 7, b.rally.y - 10);
+    ctx.lineTo(b.rally.x, b.rally.y - 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
   // 选中圈（旋转虚线，画在单位下面）
   if (ui.selection.length) {

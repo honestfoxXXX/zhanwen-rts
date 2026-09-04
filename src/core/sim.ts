@@ -160,11 +160,12 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
       earned: new Array(players).fill(0),
     },
     // 每个阵营一份 AI 状态（0 号位玩家不用，仅占位保持下标对齐）
+    crown: { t: 0, side: null },
     ai: Array.from({ length: players }, () => ({
       thinkT: 1.2, defending: false, attacking: false,
       waveCd: players === 3 ? 27 : 45, // 首波更晚：给双方留出扩张与中期拉锯的时间
       waveStart: 0, waveAt: 0,
-      scout: { infantry: 0, archer: 0, heavy: 0 },
+      scout: { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0 },
       goal: null,
       waves: 0,
     })),
@@ -378,6 +379,14 @@ export function issueCommand(w: World, c: Command): boolean {
       // 兵营施工期间也允许排队，完工后自动开训
       const hasB = w.buildings.some(b => b.side === c.side && b.type === 'barracks' && !b.dead);
       if (!hasB) { ev(w, { type: 'denied', reason: 'nobarracks' }); return false; }
+      // 科技档门禁：T2 需建成的军械库、T3 需建成的攻城工坊
+      const tier = UNIT_DEFS[c.unit].tier;
+      if (tier >= 2) {
+        const need: BuildingType = tier === 2 ? 'smithy' : 'workshop';
+        const reason: DenyReason = tier === 2 ? 'nosmithy' : 'noworkshop';
+        const hasTech = w.buildings.some(b => b.side === c.side && b.type === need && !b.dead && b.buildT <= 0);
+        if (!hasTech) { ev(w, { type: 'denied', reason }); return false; }
+      }
       const d = UNIT_DEFS[c.unit];
       if (w.crystals[c.side] < d.cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
       if (w.queue[c.side].length >= 12) { ev(w, { type: 'denied', reason: 'queue' }); return false; }
@@ -430,8 +439,8 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
 
 function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
   let dmg = def.damage;
-  if (def.dmgBonus && isUnit(t)) {
-    const bonus = def.dmgBonus[t.type];
+  if (def.dmgBonus) {
+    const bonus = isUnit(t) ? def.dmgBonus[t.type] : def.dmgBonus.building;
     if (bonus) dmg *= bonus;
   }
   applyDamage(w, t, dmg, u.side);
@@ -448,6 +457,7 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
       x: u.x, y: u.y, sx: u.x, sy: u.y, tx: t.x, ty: t.y,
       t: 0, dur: Math.max(0.06, d / def.projectileSpeed),
       side: u.side, big: u.type === 'heavy', arrow: u.type === 'archer',
+      lob: def.tier === 3,
     });
   }
 }
@@ -833,6 +843,34 @@ export function stepWorld(w: World, dt: number): void {
     p.y = p.sy + (p.ty - p.sy) * k;
   }
   cleanup(w);
+
+  // 王冠之地终局（3 人局）：600 秒后，质心 350 内唯一驻军（≥12 人口）持续 45 秒即胜
+  if (w.players === 3 && w.time >= 600 && w.tick % 15 === 0) {
+    const cx = MAP_W / 2, cy = MAP_H / 2;
+    const popIn = new Array(w.players).fill(0);
+    for (const u of w.units) {
+      if (u.dead) continue;
+      const dx = u.x - cx, dy = u.y - cy;
+      if (dx * dx + dy * dy <= 350 * 350) popIn[u.side] += UNIT_DEFS[u.type].pop;
+    }
+    const holders: Side[] = [];
+    for (let s2 = 0; s2 < w.players; s2++) {
+      if (w.alive[s2] && popIn[s2] >= 12) holders.push(s2 as Side);
+    }
+    if (holders.length === 1 && holders[0] === w.crown.side) {
+      w.crown.t += 0.25;
+    } else if (holders.length === 1) {
+      w.crown.side = holders[0];
+      w.crown.t = 0.25;
+    } else {
+      w.crown.side = null;
+      w.crown.t = 0;
+    }
+    if (w.crown.t >= 45 && !w.gameOver) {
+      w.gameOver = { winner: w.crown.side };
+      ev(w, { type: 'gameOver', winner: w.crown.side });
+    }
+  }
 }
 
 /* ---------------- 状态指纹 / 序列化（联机与测试用） ---------------- */
@@ -863,6 +901,8 @@ export function hashWorld(w: World): number {
     if (b.trainType) mix(b.trainType.length);
   }
   for (let s = 0; s < w.players; s++) mix(w.queue[s].length);
+  mixF(w.crown.t);
+  mix(w.crown.side === null ? -1 : w.crown.side);
   return h >>> 0;
 }
 
@@ -874,6 +914,7 @@ interface WorldSnapshot {
   crystals: number[]; popUsed: number[]; income: number[]; queue: UnitType[][];
   rally: Vec[]; blocked: number[]; nextId: number;
   gameOver: World['gameOver']; stats: World['stats']; ai: World['ai'];
+  crown: World['crown'];
 }
 
 export function serializeWorld(w: World): string {
@@ -883,7 +924,7 @@ export function serializeWorld(w: World): string {
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
-    gameOver: w.gameOver, stats: w.stats, ai: w.ai,
+    gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown,
   };
   return JSON.stringify(s);
 }
@@ -897,7 +938,7 @@ export function deserializeWorld(json: string): World {
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),
-    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai,
+    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown,
   };
   for (const u of w.units) w.index.set(u.id, u);
   for (const b of w.buildings) w.index.set(b.id, b);

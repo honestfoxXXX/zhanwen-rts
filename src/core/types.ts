@@ -1,7 +1,7 @@
 /** 阵营。0 恒为玩家，1..2 为 AI；实际参战方数由 World.players 决定 */
 export type Side = 0 | 1 | 2;
-export type UnitType = 'infantry' | 'archer' | 'heavy';
-export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower';
+export type UnitType = 'infantry' | 'archer' | 'heavy' | 'pikeman' | 'knight' | 'catapult' | 'champion';
+export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower' | 'smithy' | 'workshop';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export interface Vec { x: number; y: number }
@@ -19,8 +19,10 @@ export interface UnitDef {
   damage: number;
   cooldown: number;
   projectileSpeed: number; // >0 远程弹道，0 近战瞬时
-  /** 克制加成：对指定兵种的伤害倍率（只对单位生效，建筑不受影响）。集中在 config.ts 调整 */
-  dmgBonus?: Partial<Record<UnitType, number>>;
+  /** 科技档：1 基础 / 2 军械库 / 3 攻城工坊 */
+  tier: 1 | 2 | 3;
+  /** 克制加成：对指定兵种生效；`building` 键对建筑生效（攻城）。集中在 config.ts 调整 */
+  dmgBonus?: Partial<Record<UnitType | 'building', number>>;
 }
 
 export interface WeaponDef { range: number; damage: number; cooldown: number; projectileSpeed: number }
@@ -33,6 +35,8 @@ export interface BuildingDef {
   half: number; // 半宽（世界单位），建筑均为 half*2 见方
   income: number;
   weapon: WeaponDef | null;
+  /** 科技档解锁：建成后允许训练该档兵种（军械库 2 / 攻城工坊 3） */
+  unlocks?: 2 | 3;
 }
 
 export type Order =
@@ -86,9 +90,10 @@ export interface Projectile {
   side: Side;
   big: boolean;
   arrow: boolean; // 箭矢（弓手） vs 炮弹
+  lob?: boolean; // 大弧线抛射（投石车）
 }
 
-export type DenyReason = 'cost' | 'pop' | 'nobarracks' | 'place' | 'nonode' | 'queue';
+export type DenyReason = 'cost' | 'pop' | 'nobarracks' | 'place' | 'nonode' | 'queue' | 'nosmithy' | 'noworkshop';
 
 export interface SimEvent {
   type: 'shot' | 'die' | 'boom' | 'built' | 'denied' | 'gameOver' | 'moveMark' | 'wave' | 'eliminated';
@@ -174,4 +179,6 @@ export interface World {
   };
   /** 按阵营索引的 AI 状态；0 号位玩家不用，仅占位以保持下标对齐 */
   ai: AIState[];
+  /** 王冠之地（3 人局）：连续占领时长与正在占领的一方 */
+  crown: { t: number; side: Side | null };
 }

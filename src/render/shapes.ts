@@ -25,8 +25,8 @@ export const SIDE_DARK = ['#1e3a5f', '#6b1f1f', '#8a5a10'];
 export const SIDE_RING = ['rgba(91,141,214,0.7)', 'rgba(214,69,69,0.7)', 'rgba(223,165,59,0.7)'];
 export const SIDE_DIM = ['rgba(91,141,214,0.16)', 'rgba(214,69,69,0.16)', 'rgba(223,165,59,0.16)'];
 
-type ShapeKind = 'circle' | 'arrow' | 'heater';
-type EmblemKind = 'boss' | 'quiver' | 'cross';
+type ShapeKind = 'circle' | 'arrow' | 'heater' | 'diamond' | 'cart';
+type EmblemKind = 'boss' | 'quiver' | 'cross' | 'chevron' | 'pennon' | 'bolt' | 'crown';
 
 interface UnitShape {
   shape: ShapeKind;
@@ -39,6 +39,10 @@ export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
   infantry: { shape: 'circle', rMul: 1.05, emblem: 'boss', bob: 0.9 },
   archer: { shape: 'arrow', rMul: 1.2, emblem: 'quiver', bob: 0.7 },
   heavy: { shape: 'heater', rMul: 1.18, emblem: 'cross', bob: 0 },
+  pikeman: { shape: 'circle', rMul: 1.0, emblem: 'chevron', bob: 0.8 },
+  knight: { shape: 'diamond', rMul: 1.3, emblem: 'pennon', bob: 0 },
+  catapult: { shape: 'cart', rMul: 1.35, emblem: 'bolt', bob: 0 },
+  champion: { shape: 'heater', rMul: 1.35, emblem: 'crown', bob: 0 },
 };
 
 /**
@@ -206,6 +210,25 @@ function shapePath(g: CanvasRenderingContext2D, kind: ShapeKind, r: number): voi
     g.closePath();
     return;
   }
+  if (kind === 'diamond') {
+    // 骑乘剪影：纵向拉长菱形（骑手 + 马身）
+    g.moveTo(0, -r * 1.15);
+    g.lineTo(r * 0.55, -r * 0.2);
+    g.lineTo(r * 0.42, r * 0.85);
+    g.lineTo(-r * 0.42, r * 0.85);
+    g.lineTo(-r * 0.55, -r * 0.2);
+    g.closePath();
+    return;
+  }
+  if (kind === 'cart') {
+    // 车体：宽方框（投石车底盘）
+    g.moveTo(-r * 0.85, -r * 0.6);
+    g.lineTo(r * 0.85, -r * 0.6);
+    g.lineTo(r * 0.95, r * 0.55);
+    g.lineTo(-r * 0.95, r * 0.55);
+    g.closePath();
+    return;
+  }
   // heater：骑士盾，顶部圆弧、两肋内收、底部收尖
   g.moveTo(-r, -r * 0.5);
   g.quadraticCurveTo(-r, -r, 0, -r);
@@ -240,6 +263,51 @@ function drawEmblem(g: CanvasRenderingContext2D, kind: EmblemKind, vr: number, s
       g.beginPath();
       g.moveTo(0, -vr * 0.32);
       g.lineTo(0, vr * 0.34);
+      g.stroke();
+      break;
+    case 'chevron':
+      // 长枪兵：向上的 V 形枪阵
+      g.lineWidth = Math.max(1.4, vr * 0.16);
+      g.beginPath();
+      g.moveTo(-vr * 0.34, -vr * 0.05);
+      g.lineTo(0, vr * 0.3);
+      g.lineTo(vr * 0.34, -vr * 0.05);
+      g.stroke();
+      break;
+    case 'pennon':
+      // 骑士：小三角旗（挂在心位）
+      g.fillStyle = 'rgba(255,244,220,0.9)';
+      g.beginPath();
+      g.moveTo(-vr * 0.16, -vr * 0.32);
+      g.lineTo(vr * 0.3, -vr * 0.18);
+      g.lineTo(-vr * 0.16, -vr * 0.02);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 1;
+      g.stroke();
+      break;
+    case 'bolt':
+      // 投石车：粗螺栓头
+      g.fillStyle = 'rgba(255,244,220,0.9)';
+      g.beginPath();
+      g.arc(0, -vr * 0.08, Math.max(1.6, vr * 0.18), 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = SIDE_DARK[side];
+      g.lineWidth = 1.2;
+      g.stroke();
+      break;
+    case 'crown':
+      // 近卫军：三尖金冠
+      g.strokeStyle = 'rgba(255,232,160,0.95)';
+      g.lineWidth = Math.max(1.2, vr * 0.12);
+      g.beginPath();
+      g.moveTo(-vr * 0.32, vr * 0.02);
+      g.lineTo(-vr * 0.32, -vr * 0.3);
+      g.moveTo(0, vr * 0.02);
+      g.lineTo(0, -vr * 0.38);
+      g.moveTo(vr * 0.32, vr * 0.02);
+      g.lineTo(vr * 0.32, -vr * 0.3);
       g.stroke();
       break;
     case 'cross': {

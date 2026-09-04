@@ -5,6 +5,8 @@ import { drawIcon, SIDE_FILL } from '../render/shapes';
 
 const DENY_TEXT: Record<string, string> = {
   cost: '黄金不足',
+  nosmithy: '需要先建军械库',
+  noworkshop: '需要先建攻城工坊',
   pop: '人口已满',
   nobarracks: '需要先建军营',
   place: '无法在此建造',
@@ -47,7 +49,7 @@ export class Hud {
     queue: $('resQueue'), time: $('resTime'),
     goal: $('goal'), alertBanner: $('alertBanner'),
     selchip: $('selchip'), selCount: $('selCount'),
-    rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
+    rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowUnit2: $('rowUnit2'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
@@ -239,7 +241,17 @@ export class Hud {
       this.armySegs[s].style.width = `${total > 0 ? (vals[s] / total * 100) : (100 / world.players)}%`;
     }
 
-    this.els.goal.textContent = this.goalText(world);
+    // 王冠之地终局横幅（3 人局 600s 后生效）
+    if (world.players > 2 && world.crown.side !== null && world.crown.t > 0) {
+      const mine = world.crown.side === 0;
+      this.els.goal.textContent = mine
+        ? `⚜ 王冠之地占领中 ${Math.ceil(45 - world.crown.t)}s —— 守住！`
+        : `⚠ 敌方占领王冠之地 ${Math.ceil(45 - world.crown.t)}s —— 快去阻止！`;
+      this.els.goal.style.color = mine ? '#ffe9a8' : '#f87171';
+    } else {
+      this.els.goal.textContent = this.goalText(world);
+      this.els.goal.style.color = '';
+    }
 
     for (const [t, btn] of this.buildBtns) {
       const d = BUILDING_DEFS[t];
@@ -247,9 +259,16 @@ export class Hud {
       if (t === 'mine' && !world.nodes.some(n => n.mineId === null)) ok = false;
       btn.disabled = !ok;
     }
+    const hasSmithy = world.buildings.some(b => b.side === 0 && b.type === 'smithy' && !b.dead && b.buildT <= 0);
+    const hasWorkshop = world.buildings.some(b => b.side === 0 && b.type === 'workshop' && !b.dead && b.buildT <= 0);
+    this.els.rowUnit2?.classList.toggle('hidden', !(hasSmithy || hasWorkshop));
     for (const [t, btn] of this.trainBtns) {
       const d = UNIT_DEFS[t];
-      btn.disabled = cr < d.cost || world.popUsed[0] + d.pop > POP_CAP;
+      let ok = cr >= d.cost && world.popUsed[0] + d.pop <= POP_CAP;
+      const locked = (d.tier === 2 && !hasSmithy) || (d.tier === 3 && !hasWorkshop);
+      if (locked) ok = false;
+      btn.disabled = !ok;
+      btn.classList.toggle('locked', locked);
       const q = world.queue[0].filter(v => v === t).length;
       let badge = btn.querySelector('.badge');
       if (q > 0) {

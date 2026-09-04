@@ -72,10 +72,27 @@ function playerThink(w: World): void {
     const slot = findBuildSlot(w, side, 'tower', P_TOWERS);
     if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot.x, y: slot.y });
   }
+  // 科技建筑阶梯（与 AI 同规则：矿线达标后投资二/三本）
+  if (!myB.some(b => b.type === 'smithy') && mines.length >= 4 && w.crystals[side] >= BUILDING_DEFS.smithy.cost + 100) {
+    const slot = findBuildSlot(w, side, 'smithy', P_BARRACKS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'smithy', x: slot.x, y: slot.y });
+  }
+  if (myB.some(b => b.type === 'smithy' && !b.dead) && !myB.some(b => b.type === 'workshop') &&
+      mines.length >= 6 && w.crystals[side] >= BUILDING_DEFS.workshop.cost + 200) {
+    const slot = findBuildSlot(w, side, 'workshop', P_BARRACKS);
+    if (slot) issueCommand(w, { type: 'build', side, building: 'workshop', x: slot.x, y: slot.y });
+  }
 
   // 造兵：按固定配比，钱够就排队
   if (barracks.length && w.queue[side].length < 3) {
-    const t: UnitType = w.crystals[side] > 260 ? 'heavy' : w.crystals[side] > 90 ? 'archer' : 'infantry';
+    const hasSmithy = myB.some(b => b.type === 'smithy' && !b.dead && b.buildT <= 0);
+    const hasWorkshop = myB.some(b => b.type === 'workshop' && !b.dead && b.buildT <= 0);
+    const t: UnitType =
+      w.crystals[side] > 500 && hasWorkshop ? (Math.random() < 0.5 ? 'catapult' : 'champion')
+      : w.crystals[side] > 300 && hasSmithy ? (Math.random() < 0.5 ? 'knight' : 'pikeman')
+      : w.crystals[side] > 260 ? 'heavy'
+      : w.crystals[side] > 90 ? 'archer'
+      : 'infantry';
     if (w.crystals[side] >= UNIT_DEFS[t].cost) issueCommand(w, { type: 'train', side, unit: t });
   }
 
