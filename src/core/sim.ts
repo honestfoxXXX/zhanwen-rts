@@ -161,6 +161,7 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     },
     // 每个阵营一份 AI 状态（0 号位玩家不用，仅占位保持下标对齐）
     crown: { t: 0, side: null },
+    rallyAuto: map.spawns.map((_, i) => i === 0),
     ai: Array.from({ length: players }, () => ({
       thinkT: 1.2, defending: false, attacking: false,
       waveCd: players === 3 ? 27 : 45, // 首波更晚：给双方留出扩张与中期拉锯的时间
@@ -310,7 +311,10 @@ export function issueCommand(w: World, c: Command): boolean {
       for (const id of c.ids) {
         const u = unitOf(w, id, c.side);
         if (!u) continue;
-        setMoveOrder(w, u, c.x, c.y);
+        // 锋线阵型辅助：一次下令自动分层——近战在目标点、远程后撤 70、骑士前压 40。
+        // 行军时远程自然跟在近战身后，接战近战先顶；点选精度不受影响（偏移量小）。
+        const p = formationOffset(w, u, c.x, c.y);
+        setMoveOrder(w, u, p.x, p.y);
         any = true;
       }
       if (any) ev(w, { type: 'moveMark', x: c.x, y: c.y });
@@ -402,9 +406,38 @@ export function issueCommand(w: World, c: Command): boolean {
         return true;
       }
       w.rally[c.side] = { x: c.x, y: c.y };
+      w.rallyAuto[c.side] = false; // 玩家指定固定集结点后关闭自动跟队
       return true;
     }
   }
+}
+
+/** 锋线阵型：按兵种角色对移动落点做偏移 */
+/** 兵种阵型角色：前排顶线 / 远程拖后 / 骑士先锋 */
+const UNIT_ROLE: Record<UnitType, 'front' | 'ranged' | 'vanguard'> = {
+  infantry: 'front',
+  heavy: 'front',
+  pikeman: 'front',
+  champion: 'front',
+  archer: 'ranged',
+  catapult: 'ranged',
+  knight: 'vanguard',
+};
+
+function formationOffset(w: World, u: Unit, tx: number, ty: number): Vec {
+  const role = UNIT_ROLE[u.type];
+  const home = w.spawns[u.side];
+  if (role === 'ranged') {
+    const dx = home.x - tx, dy = home.y - ty;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { x: tx + (dx / len) * 70, y: ty + (dy / len) * 70 };
+  }
+  if (role === 'vanguard') {
+    const dx = tx - home.x, dy = ty - home.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { x: tx + (dx / len) * 40, y: ty + (dy / len) * 40 };
+  }
+  return { x: tx, y: ty };
 }
 
 function setMoveOrder(w: World, u: Unit, x: number, y: number): void {
@@ -655,7 +688,16 @@ function updateEconomy(w: World, dt: number): void {
 function spawnFrom(w: World, b: Building): void {
   const t = b.trainType as UnitType;
   const d = UNIT_DEFS[t];
-  const rally = b.rally ?? w.rally[b.side];
+  let rally = b.rally ?? w.rally[b.side];
+  // 阵型辅助：auto 集结（默认开）→ 新兵自动奔赴己方军队质心，不用手动带队
+  if (!b.rally && w.rallyAuto[b.side]) {
+    let sx = 0, sy = 0, n = 0;
+    for (const u of w.units) {
+      if (u.dead || u.side !== b.side) continue;
+      sx += u.x; sy += u.y; n++;
+    }
+    if (n > 0) rally = { x: sx / n, y: sy / n };
+  }
   let px = b.x + b.half + d.radius + 4, py = b.y;
   const base = Math.atan2(rally.y - b.y, rally.x - b.x);
   let found = false;
@@ -904,6 +946,7 @@ export function hashWorld(w: World): number {
   for (let s = 0; s < w.players; s++) mix(w.queue[s].length);
   mixF(w.crown.t);
   mix(w.crown.side === null ? -1 : w.crown.side);
+  for (let s2 = 0; s2 < w.players; s2++) mix(w.rallyAuto[s2] ? 1 : 0);
   return h >>> 0;
 }
 
@@ -916,6 +959,7 @@ interface WorldSnapshot {
   rally: Vec[]; blocked: number[]; nextId: number;
   gameOver: World['gameOver']; stats: World['stats']; ai: World['ai'];
   crown: World['crown'];
+  rallyAuto: boolean[];
 }
 
 export function serializeWorld(w: World): string {
@@ -925,7 +969,7 @@ export function serializeWorld(w: World): string {
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
-    gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown,
+    gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown, rallyAuto: w.rallyAuto,
   };
   return JSON.stringify(s);
 }
@@ -939,7 +983,7 @@ export function deserializeWorld(json: string): World {
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),
-    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown,
+    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown, rallyAuto: s.rallyAuto,
   };
   for (const u of w.units) w.index.set(u.id, u);
   for (const b of w.buildings) w.index.set(b.id, b);

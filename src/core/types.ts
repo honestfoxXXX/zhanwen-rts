@@ -183,4 +183,6 @@ export interface World {
   ai: AIState[];
   /** 王冠之地（3 人局）：连续占领时长与正在占领的一方 */
   crown: { t: number; side: Side | null };
+  /** 阵型辅助：集结点是否自动跟随军队质心（玩家默认开；点「集结」设固定点即关闭） */
+  rallyAuto: boolean[];
 }

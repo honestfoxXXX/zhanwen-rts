@@ -234,7 +234,7 @@ export class Input {
           ? { type: 'rally', side: 0, x: wp.x, y: wp.y, buildingId: forB }
           : { type: 'rally', side: 0, x: wp.x, y: wp.y },
       );
-      this.hooks.toast(forB !== null ? '该兵营集结点已设置' : '集结点已设置');
+      this.hooks.toast(forB !== null ? '该军营集结点已设置' : '集结点已设置（新兵改赴固定点）');
       this.ui.mode = 'none';
       this.ui.rallyFor = null;
       return;

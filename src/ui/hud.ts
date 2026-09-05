@@ -32,6 +32,8 @@ export interface HudHooks {
   desel: () => void;
   hold: () => void;
   retreat: () => void;
+  pickFront: () => void;
+  pickBack: () => void;
   sound: () => string;
   music: () => string;
 }
@@ -77,6 +79,8 @@ export class Hud {
     $('btnRally').addEventListener('click', () => hooks.rally());
     $('btnHold').addEventListener('click', () => hooks.hold());
     $('btnRetreat').addEventListener('click', () => hooks.retreat());
+    $('btnFront').addEventListener('click', () => hooks.pickFront());
+    $('btnBack').addEventListener('click', () => hooks.pickBack());
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
     this.els.placeNo.addEventListener('click', () => hooks.placeNo());
     $('btnDesel').addEventListener('click', () => hooks.desel());

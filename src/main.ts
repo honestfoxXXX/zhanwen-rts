@@ -92,6 +92,18 @@ const hud = new Hud({
     if (!ui.selection.length) hud.toast('没有可用的部队');
   },
   rally: () => { if (world && state === 'play') { ui.mode = 'rally'; play('ui'); } },
+  pickFront: () => {
+    if (!world || state !== 'play') return;
+    ui.selection = world.units.filter(u => !u.dead && u.side === 0 && u.type !== 'archer' && u.type !== 'catapult').map(u => u.id);
+    hud.toast(ui.selection.length ? `前排 ${ui.selection.length} 支` : '没有前排部队');
+    play('ui');
+  },
+  pickBack: () => {
+    if (!world || state !== 'play') return;
+    ui.selection = world.units.filter(u => !u.dead && u.side === 0 && (u.type === 'archer' || u.type === 'catapult')).map(u => u.id);
+    hud.toast(ui.selection.length ? `后排 ${ui.selection.length} 支` : '没有后排部队');
+    play('ui');
+  },
   hold: () => {
     if (!world || state !== 'play' || !ui.selection.length) return;
     issueCommand(world, { type: 'hold', side: 0, ids: [...ui.selection] });
