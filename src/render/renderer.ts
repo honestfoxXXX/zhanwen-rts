@@ -900,6 +900,73 @@ function smokePuffs(g: CanvasRenderingContext2D, x: number, y: number, seed: num
   g.globalAlpha = 1;
 }
 
+/* ---------------- 建筑材质 helpers ---------------- */
+
+/** 错缝砖墙：底色 + 分行错缝描线 + 顶部受光边 */
+function brickWall(
+  g: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  base: string, seam: string,
+): void {
+  g.fillStyle = base;
+  g.fillRect(x, y, w, h);
+  g.strokeStyle = seam;
+  g.lineWidth = 0.7;
+  const rows = Math.max(2, Math.round(h / 6.5));
+  const rh = h / rows;
+  for (let r = 0; r <= rows; r++) {
+    g.beginPath();
+    g.moveTo(x, y + r * rh);
+    g.lineTo(x + w, y + r * rh);
+    g.stroke();
+    if (r < rows) {
+      const off = (r % 2) * (w / 4);
+      g.beginPath();
+      g.moveTo(x + off, y + r * rh);
+      g.lineTo(x + off, y + (r + 1) * rh);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x + off + w / 2, y + r * rh);
+      g.lineTo(x + off + w / 2, y + (r + 1) * rh);
+      g.stroke();
+    }
+  }
+  g.fillStyle = 'rgba(255,250,230,0.1)';
+  g.fillRect(x, y, w, 1.1);
+}
+
+/** 木板面：横板 + 板缝 + 木纹短弧 */
+function woodPlank(
+  g: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  base: string, seam: string, vertical = false,
+): void {
+  g.fillStyle = base;
+  g.fillRect(x, y, w, h);
+  g.strokeStyle = seam;
+  g.lineWidth = 0.7;
+  const n = Math.max(2, Math.round((vertical ? w : h) / 5));
+  for (let i = 1; i < n; i++) {
+    g.beginPath();
+    if (vertical) { g.moveTo(x + (w / n) * i, y); g.lineTo(x + (w / n) * i, y + h); }
+    else { g.moveTo(x, y + (h / n) * i); g.lineTo(x + w, y + (h / n) * i); }
+    g.stroke();
+  }
+}
+
+/** 金属件：垂直渐变高光 */
+function metalShade(
+  g: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+): void {
+  const grad = g.createLinearGradient(x, y, x, y + h);
+  grad.addColorStop(0, '#f0f4fa');
+  grad.addColorStop(0.45, '#c8d0dc');
+  grad.addColorStop(1, '#7c8494');
+  g.fillStyle = grad;
+  g.fillRect(x, y, w, h);
+}
+
 /** 建筑静态主体（精灵缓存内绘制；中心 0,0；dmg = 损伤档 0/1/2） */
 function paintBuildingStatic(
   g: CanvasRenderingContext2D,
@@ -933,115 +1000,137 @@ function paintBuildingStatic(
   }
   switch (type) {
     case 'hq': {
-      // 双侧塔楼（石砌）
-      g.fillStyle = '#857f71';
-      g.fillRect(-21, -9, 9, 23);
-      g.fillRect(12, -9, 9, 23);
-      g.strokeStyle = 'rgba(40,34,24,0.35)';
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(-20, 0); g.lineTo(-13, 0);
-      g.moveTo(13, 0); g.lineTo(20, 0);
-      g.moveTo(-20, 8); g.lineTo(-13, 8);
-      g.moveTo(13, 8); g.lineTo(20, 8);
-      g.stroke();
-      // 主堡 + 石缝
-      g.fillStyle = '#a29c8e';
-      g.fillRect(-12, -7, 24, 25);
-      g.beginPath();
-      g.moveTo(-11, 1); g.lineTo(11, 1);
-      g.moveTo(-11, 9); g.lineTo(11, 9);
-      g.moveTo(-5, -3); g.lineTo(-5, 1);
-      g.moveTo(6, 1); g.lineTo(6, 9);
-      g.stroke();
-      // 右缘暗面（体积）
-      g.fillStyle = 'rgba(30,24,16,0.14)';
-      g.fillRect(6, -7, 6, 25);
-      // 雉堞：主堡 + 双塔
+      // 石台基座
+      g.fillStyle = '#6f6a5e';
+      g.fillRect(-26, 16, 52, 5);
+      g.fillStyle = '#7d786c';
+      g.fillRect(-25, 12, 50, 5);
+      // 双侧塔楼：左亮右暗圆柱感 + 锥顶
+      for (const [tx, bright] of [[-25, true], [13, false]] as const) {
+        g.fillStyle = bright ? '#98927f' : '#7d786c';
+        g.fillRect(tx, -9, 12, 22);
+        brickWall(g, tx, -9, 12, 22, bright ? '#98927f' : '#7d786c', 'rgba(40,34,24,0.3)');
+        g.fillStyle = bright ? '#a8a294' : '#6e695e';
+        g.fillRect(tx, -12, 12, 4);
+        // 锥形顶（阵营色染边）
+        g.fillStyle = SIDE[side];
+        g.beginPath();
+        g.moveTo(tx - 7.5, -12);
+        g.lineTo(tx + 6, -26);
+        g.lineTo(tx + 12, -12);
+        g.closePath();
+        g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.18)';
+        g.beginPath();
+        g.moveTo(tx + 6, -26);
+        g.lineTo(tx + 12, -12);
+        g.lineTo(tx + 6, -12);
+        g.closePath();
+        g.fill();
+      }
+      // 主堡：错缝砖墙 + 出檐
+      brickWall(g, -13, -7, 26, 23, '#a29c8e', 'rgba(40,34,24,0.32)');
+      g.fillStyle = 'rgba(30,24,16,0.16)';
+      g.fillRect(5, -7, 8, 23);
       g.fillStyle = '#b5afa0';
-      g.fillRect(-12, -11, 24, 5);
-      g.fillRect(-21, -13, 9, 5);
-      g.fillRect(12, -13, 9, 5);
+      g.fillRect(-14, -11, 28, 5);
       g.fillStyle = '#6e695e';
-      for (const nx of [-8.5, -2.5, 3.5]) g.fillRect(nx, -11, 2.2, 5);
-      g.fillRect(-16.5, -13, 2, 5);
-      g.fillRect(-11.5, -13, 2, 5);
-      g.fillRect(16.5, -13, 2, 5);
-      g.fillRect(10.5, -13, 2, 5);
-      // 拱门 + 门闸
-      g.fillStyle = 'rgba(26,20,12,0.82)';
+      for (const nx of [-10.5, -4, 2.5]) g.fillRect(nx, -11, 2.4, 5);
+      // 大门拱 + 吊桥木板 + 门闸
+      g.fillStyle = 'rgba(26,20,12,0.85)';
       g.beginPath();
-      g.moveTo(-4.5, 18);
-      g.lineTo(-4.5, 14);
-      g.arc(0, 14, 4.5, Math.PI, 0);
-      g.lineTo(4.5, 18);
+      g.moveTo(-5.5, 18);
+      g.lineTo(-5.5, 13);
+      g.arc(0, 13, 5.5, Math.PI, 0);
+      g.lineTo(5.5, 18);
       g.closePath();
       g.fill();
-      g.strokeStyle = 'rgba(201,162,39,0.55)';
-      g.lineWidth = 0.8;
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(-4.5, 13.5, 9, 4.5);
+      g.strokeStyle = 'rgba(30,22,12,0.6)';
+      g.lineWidth = 0.7;
+      for (let i = 1; i < 3; i++) {
+        g.beginPath();
+        g.moveTo(-4.5 + i * 3, 13.5);
+        g.lineTo(-4.5 + i * 3, 18);
+        g.stroke();
+      }
+      g.strokeStyle = 'rgba(201,162,39,0.65)';
+      g.lineWidth = 0.9;
       g.beginPath();
-      g.moveTo(-1.5, 15); g.lineTo(-1.5, 18);
-      g.moveTo(1.5, 15); g.lineTo(1.5, 18);
+      g.moveTo(-2, 14.5); g.lineTo(-2, 18);
+      g.moveTo(2, 14.5); g.lineTo(2, 18);
       g.stroke();
-      // 箭窗 + 门拱火把杆
-      g.fillStyle = 'rgba(26,20,12,0.7)';
-      g.fillRect(-7.2, -4, 1.6, 3.5);
-      g.fillRect(5.6, -4, 1.6, 3.5);
+      // 箭窗（左右塔）
+      g.fillStyle = 'rgba(26,20,12,0.78)';
+      g.fillRect(-20, -4, 1.8, 4);
+      g.fillRect(18.2, -4, 1.8, 4);
+      // 火把杆 + 旗杆（旗布动态）
       g.fillStyle = 'rgba(20,14,8,0.7)';
       g.fillRect(-8.8, 6, 1.6, 4);
       g.fillRect(7.2, 6, 1.6, 4);
-      // 旗杆（旗布动态）
       g.strokeStyle = SIDE_DARK[side];
       g.lineWidth = 1.8;
       g.beginPath();
       g.moveTo(16.5, -13);
-      g.lineTo(16.5, -25);
+      g.lineTo(16.5, -27);
       g.stroke();
       break;
     }
     case 'mine': {
+      // 土堆三层
+      g.fillStyle = '#6e6557';
+      g.beginPath();
+      g.ellipse(0, 8, 17, 8.5, 0, 0, Math.PI * 2);
+      g.fill();
       g.fillStyle = '#7d7566';
       g.beginPath();
-      g.ellipse(0, 7, 15, 7.5, 0, 0, Math.PI * 2);
+      g.ellipse(0, 6.5, 13, 6.5, 0, 0, Math.PI * 2);
       g.fill();
-      g.fillStyle = 'rgba(255,255,255,0.14)';
+      g.fillStyle = 'rgba(255,255,255,0.12)';
       g.beginPath();
-      g.ellipse(-4, 3.5, 8, 3.4, -0.25, 0, Math.PI * 2);
+      g.ellipse(-4, 3.5, 7, 3, -0.25, 0, Math.PI * 2);
       g.fill();
+      // 坑口木框：方井 + 双柱 + 顶梁
       g.fillStyle = '#221a0e';
+      g.fillRect(-7, -2, 14, 11);
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(-8.5, -4, 3, 14);
+      g.fillRect(5.5, -4, 3, 14);
+      woodPlank(g, -9.5, -6.5, 19, 3.4, '#7a5530', 'rgba(40,28,14,0.7)');
+      // 轨道 + 矿车（斗 + 轮）
+      g.strokeStyle = '#4a3520';
+      g.lineWidth = 1.6;
       g.beginPath();
-      g.ellipse(0, 3.5, 6.5, 4.2, 0, 0, Math.PI * 2);
+      g.moveTo(-13, 15.5);
+      g.lineTo(13, 15.5);
+      g.stroke();
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(-5, 10, 10, 4.5);
+      g.fillStyle = '#3a2c18';
+      g.beginPath();
+      g.arc(-3, 15, 1.7, 0, Math.PI * 2);
+      g.arc(3, 15, 1.7, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = '#6b4a2a';
-      g.lineWidth = 2.4;
-      g.lineCap = 'round';
-      g.beginPath();
-      g.moveTo(-8, 12);
-      g.lineTo(-3.5, -8);
-      g.moveTo(8, 12);
-      g.lineTo(3.5, -8);
-      g.stroke();
-      g.lineWidth = 2;
-      g.beginPath();
-      g.moveTo(-6, -6.5);
-      g.lineTo(6, -6.5);
-      g.stroke();
-      g.lineCap = 'butt';
       g.fillStyle = '#f0c24e';
-      for (const [gx, gy, gr] of [[-7, 11, 3.6], [6, 12, 3.2], [0, 13.5, 3]] as const) {
+      g.fillRect(-3.8, 8.4, 7.6, 2.4);
+      // 金块堆 + 高光
+      g.fillStyle = '#f0c24e';
+      for (const [gx, gy, gr] of [[-13, 9, 3.4], [12, 10, 3], [8, 14, 2.8]] as const) {
         g.beginPath();
         g.arc(gx, gy, gr, 0, Math.PI * 2);
         g.fill();
       }
       g.fillStyle = '#ffe9a8';
-      for (const [gx, gy] of [[-8, 10], [5, 11], [-1, 12.6]] as const) {
+      for (const [gx, gy] of [[-14, 8], [11.4, 9.2], [7.4, 13]] as const) {
         g.beginPath();
-        g.arc(gx, gy, 1.1, 0, Math.PI * 2);
+        g.arc(gx, gy, 1, 0, Math.PI * 2);
         g.fill();
       }
       break;
     }
     case 'barracks': {
+      // 拉绳 + 基座
       g.strokeStyle = 'rgba(60,48,30,0.5)';
       g.lineWidth = 1;
       g.beginPath();
@@ -1054,6 +1143,7 @@ function paintBuildingStatic(
       g.beginPath();
       g.ellipse(0, 13, 17, 4.5, 0, 0, Math.PI * 2);
       g.fill();
+      // 帐篷主体（帆布）
       g.fillStyle = SIDE[side];
       g.beginPath();
       g.moveTo(-16, 12);
@@ -1061,6 +1151,7 @@ function paintBuildingStatic(
       g.lineTo(16, 12);
       g.closePath();
       g.fill();
+      // 背光面 + 受光面
       g.fillStyle = 'rgba(0,0,0,0.2)';
       g.beginPath();
       g.moveTo(0, -13);
@@ -1075,6 +1166,16 @@ function paintBuildingStatic(
       g.lineTo(-7, 12);
       g.closePath();
       g.fill();
+      // 布褶皱（三条暗线）
+      g.strokeStyle = 'rgba(0,0,0,0.14)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(-5, -3.5);
+      g.lineTo(-8.5, 12);
+      g.moveTo(5, -3.5);
+      g.lineTo(8.5, 12);
+      g.stroke();
+      // 顶脊奶白条纹
       g.strokeStyle = 'rgba(245,236,210,0.55)';
       g.lineWidth = 2;
       g.beginPath();
@@ -1083,6 +1184,7 @@ function paintBuildingStatic(
       g.moveTo(2.5, -10.4);
       g.lineTo(13, 7.5);
       g.stroke();
+      // 门帘
       g.fillStyle = 'rgba(20,14,8,0.6)';
       g.beginPath();
       g.moveTo(0, -3);
@@ -1090,13 +1192,28 @@ function paintBuildingStatic(
       g.lineTo(4.5, 12);
       g.closePath();
       g.fill();
+      // 武器架（3 剑插架）+ 木箱
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(-17, 4, 8, 2);
+      g.strokeStyle = '#c8d0dc';
+      g.lineWidth = 1.1;
+      for (const bx of [-15.5, -13, -10.5]) {
+        g.beginPath();
+        g.moveTo(bx, 4);
+        g.lineTo(bx + (bx < -13 ? -1 : 1) * 1.5, -4);
+        g.stroke();
+      }
+      woodPlank(g, 9, 4, 8, 7, '#8a6f42', 'rgba(40,28,14,0.6)');
+      g.strokeStyle = 'rgba(40,28,14,0.7)';
+      g.lineWidth = 1;
+      g.strokeRect(9, 4, 8, 7);
+      // 中柱 + 旗杆
       g.strokeStyle = 'rgba(20,14,8,0.55)';
       g.lineWidth = 1.8;
       g.beginPath();
       g.moveTo(0, -13);
       g.lineTo(0, 12);
       g.stroke();
-      // 旗杆（旗布动态）
       g.strokeStyle = SIDE_DARK[side];
       g.lineWidth = 2;
       g.beginPath();
@@ -1110,15 +1227,10 @@ function paintBuildingStatic(
       g.beginPath();
       g.ellipse(0, 13, 11, 4, 0, 0, Math.PI * 2);
       g.fill();
-      g.fillStyle = '#a29c8e';
-      g.beginPath();
-      g.moveTo(-8.5, 13);
-      g.lineTo(-6, -7);
-      g.lineTo(6, -7);
-      g.lineTo(8.5, 13);
-      g.closePath();
-      g.fill();
-      g.fillStyle = 'rgba(30,24,16,0.14)';
+      // 砖块塔身
+      brickWall(g, -8.5, -7, 17, 20, '#a29c8e', 'rgba(40,34,24,0.32)');
+      // 右缘暗面（体积）
+      g.fillStyle = 'rgba(30,24,16,0.15)';
       g.beginPath();
       g.moveTo(2, -7);
       g.lineTo(6, -7);
@@ -1126,25 +1238,163 @@ function paintBuildingStatic(
       g.lineTo(3.5, 13);
       g.closePath();
       g.fill();
-      g.strokeStyle = 'rgba(40,34,24,0.35)';
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(-6.8, 5);
-      g.lineTo(7.2, 5);
-      g.moveTo(-5.8, -1);
-      g.lineTo(6.2, -1);
-      g.moveTo(-6.4, 2);
-      g.lineTo(-3.4, 2);
-      g.moveTo(4.4, 8);
-      g.lineTo(7.4, 8);
-      g.stroke();
+      // 出檐石台 + 雉堞
       g.fillStyle = '#b5afa0';
-      g.fillRect(-7.5, -12, 15, 5);
+      g.fillRect(-9.5, -12, 19, 5);
       g.fillStyle = '#6e695e';
-      g.fillRect(-3.2, -12, 2, 5);
-      g.fillRect(3.4, -12, 2, 5);
-      g.fillStyle = 'rgba(26,20,12,0.75)';
-      g.fillRect(-0.8, -4.5, 1.6, 4);
+      g.fillRect(-5.8, -12, 2.2, 5);
+      g.fillRect(3.6, -12, 2.2, 5);
+      // 箭窗 + 木门
+      g.fillStyle = 'rgba(26,20,12,0.78)';
+      g.fillRect(-0.9, -5, 1.8, 4.4);
+      g.fillRect(-2.2, 6, 4.4, 7);
+      g.strokeStyle = 'rgba(201,162,39,0.4)';
+      g.lineWidth = 0.7;
+      g.beginPath();
+      g.moveTo(0, 6);
+      g.lineTo(0, 13);
+      g.stroke();
+      break;
+    }
+    case 'smithy': {
+      // 石砌矮房（砖墙）+ 出檐
+      brickWall(g, -18, -6, 36, 22, '#8d877a', 'rgba(40,34,24,0.34)');
+      g.fillStyle = 'rgba(30,24,16,0.16)';
+      g.fillRect(9, -6, 9, 22);
+      g.fillStyle = '#a8a294';
+      g.fillRect(-19, -9.5, 38, 4.5);
+      // 大烟囱（右后，砖纹 + 烟口）
+      brickWall(g, 10, -22, 9, 15, '#7d786c', 'rgba(40,34,24,0.32)');
+      g.fillStyle = '#221a0e';
+      g.fillRect(12, -22, 5, 2.2);
+      // 锻造炉口：拱形开口 + 炭火底色（动态层加闪烁火光）
+      g.fillStyle = 'rgba(20,14,8,0.9)';
+      g.beginPath();
+      g.moveTo(-7, 16);
+      g.lineTo(-7, 6);
+      g.arc(0, 6, 7, Math.PI, 0);
+      g.lineTo(7, 16);
+      g.closePath();
+      g.fill();
+      const fire = g.createRadialGradient(0, 12, 1, 0, 12, 6.5);
+      fire.addColorStop(0, 'rgba(255,180,60,0.9)');
+      fire.addColorStop(0.6, 'rgba(230,90,20,0.75)');
+      fire.addColorStop(1, 'rgba(120,40,10,0.4)');
+      g.fillStyle = fire;
+      g.beginPath();
+      g.moveTo(-5, 16);
+      g.lineTo(-5, 8);
+      g.arc(0, 8, 5, Math.PI, 0);
+      g.lineTo(5, 16);
+      g.closePath();
+      g.fill();
+      // 门框阵营色
+      g.strokeStyle = SIDE[side];
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.moveTo(-7, 16);
+      g.lineTo(-7, 6);
+      g.arc(0, 6, 7, Math.PI, 0);
+      g.lineTo(7, 16);
+      g.stroke();
+      // 铁砧（左前 T 形）+ 立锤
+      metalShade(g, -22, 8, 8, 2.6);
+      g.fillStyle = '#5a5e68';
+      g.fillRect(-19, 10.6, 3, 4.5);
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(-13.5, 2, 1.8, 9);
+      metalShade(g, -15.5, 0.5, 6, 3);
+      // 挂墙锤 + 皮革围裙（阵营色小件）
+      g.fillStyle = SIDE[side];
+      g.fillRect(13, 2, 5, 7);
+      g.strokeStyle = 'rgba(0,0,0,0.3)';
+      g.lineWidth = 0.8;
+      g.strokeRect(13, 2, 5, 7);
+      break;
+    }
+    case 'workshop': {
+      // 地面垫木
+      woodPlank(g, -22, 12, 44, 5, '#7a5530', 'rgba(40,28,14,0.65)', true);
+      // 三根木柱
+      g.fillStyle = '#6b4a2a';
+      for (const px of [-20, -1, 18]) g.fillRect(px, -14, 3.4, 27);
+      // 斜屋顶（木板纹 + 出檐）
+      g.save();
+      g.beginPath();
+      g.moveTo(-25, -14);
+      g.lineTo(25, -14);
+      g.lineTo(20, -24);
+      g.lineTo(-20, -24);
+      g.closePath();
+      woodPlank(g, -25, -24, 50, 10, '#8a6f42', 'rgba(40,28,14,0.6)');
+      g.strokeStyle = 'rgba(40,28,14,0.5)';
+      g.lineWidth = 1;
+      g.stroke();
+      g.restore();
+      // 屋檐布幔（阵营色三角边）
+      g.fillStyle = SIDE[side];
+      for (let i = 0; i < 6; i++) {
+        const bx = -24 + i * 8;
+        g.beginPath();
+        g.moveTo(bx, -14);
+        g.lineTo(bx + 8, -14);
+        g.lineTo(bx + 4, -9.5);
+        g.closePath();
+        g.fill();
+      }
+      // 棚内投臂原型：斜臂 + 配重箱 + 勺兜
+      g.strokeStyle = '#6b4a2a';
+      g.lineWidth = 3.2;
+      g.beginPath();
+      g.moveTo(-8, 10);
+      g.lineTo(14, -16);
+      g.stroke();
+      g.lineWidth = 2.2;
+      g.beginPath();
+      g.moveTo(-8, 10);
+      g.lineTo(2, 10);
+      g.stroke();
+      g.fillStyle = '#5a5248';
+      g.fillRect(-13, 4, 7, 7);
+      g.strokeStyle = 'rgba(0,0,0,0.3)';
+      g.lineWidth = 0.8;
+      g.strokeRect(-13, 4, 7, 7);
+      g.fillStyle = '#4a3520';
+      g.beginPath();
+      g.arc(15.5, -17.5, 3.4, 0, Math.PI * 2);
+      g.fill();
+      // 石弹
+      g.fillStyle = '#8d877a';
+      g.beginPath();
+      g.arc(9, 9, 3, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.2)';
+      g.beginPath();
+      g.arc(8.2, 8.2, 1.1, 0, Math.PI * 2);
+      g.fill();
+      // 木轮（辐条）
+      g.fillStyle = '#4a3520';
+      g.beginPath();
+      g.arc(-16, 9, 5.2, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#8a6f42';
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.arc(-16, 9, 3.4, 0, Math.PI * 2);
+      g.stroke();
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(-16 + Math.cos(a) * 1, 9 + Math.sin(a) * 1);
+        g.lineTo(-16 + Math.cos(a) * 4.6, 9 + Math.sin(a) * 4.6);
+        g.stroke();
+      }
+      // 圆木堆
+      g.fillStyle = '#6b4a2a';
+      g.fillRect(16, 6, 12, 3);
+      g.fillRect(18, 3, 12, 3);
+      g.fillStyle = 'rgba(255,255,255,0.1)';
+      g.fillRect(16, 6, 12, 1);
       break;
     }
   }
