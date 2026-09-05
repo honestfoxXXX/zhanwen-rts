@@ -247,7 +247,9 @@ function drainEvents(): void {
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
           else fx.flash(e.x, e.y, e.big ?? false);
         }
-        play('shot', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
+        if (e.from === 'catapult') play('siege', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
+        else if (e.melee) play('clash', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
+        else play('shot', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         // 混战里不能靠"攻击方不是我"判断挨打（AI 互相打也算），必须看事件里记录的挨打方
         if (e.targetSide === 0 && e.tx !== undefined && e.ty !== undefined && state === 'play') {
           triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);

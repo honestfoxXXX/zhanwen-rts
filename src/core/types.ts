@@ -108,6 +108,8 @@ export interface SimEvent {
   targetBuilding?: boolean;
   /** shot 事件附带：近战(true)没有弹道，表现层用挥砍弧线而非枪口闪光 */
   melee?: boolean;
+  /** shot 事件附带：攻击来源（表现层选音效：投石三段 / 塔 / 单位） */
+  from?: 'unit' | 'tower' | 'catapult';
 }
 
 type WithTick<T> = T & { tick?: number };

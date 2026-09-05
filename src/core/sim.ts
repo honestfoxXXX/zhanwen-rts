@@ -450,6 +450,7 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
     // 混战下不能靠"攻击方不是我"推断挨打的是谁，必须显式记录
     targetSide: t.side,
     targetBuilding: !isUnit(t), melee: def.projectileSpeed === 0,
+    from: u.type === 'catapult' ? 'catapult' : 'unit',
   });
   if (def.projectileSpeed > 0) {
     const d = dist(u.x, u.y, t.x, t.y);
@@ -744,7 +745,7 @@ function updateBuildings(w: World, dt: number): void {
       applyDamage(w, best, wpn.damage, b.side);
       ev(w, {
         type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y,
-        side: b.side, big: false, targetSide: best.side, melee: false,
+        side: b.side, big: false, targetSide: best.side, melee: false, from: 'tower',
       });
       w.projectiles.push({
         x: b.x, y: b.y, sx: b.x, sy: b.y, tx: best.x, ty: best.y,

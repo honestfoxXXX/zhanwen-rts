@@ -214,7 +214,7 @@ export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'l
 export function play(name: SoundName, vol = 1): void {
   if (!ac || muted) return;
   const now = performance.now();
-  const gap = name === 'shot' ? 60 : name === 'move' ? 120 : name === 'die' ? 80 : 0;
+  const gap = name === 'shot' ? 60 : name === 'move' ? 120 : name === 'die' ? 80 : name === 'clash' ? 90 : 0;
   if (gap) {
     const last = lastPlay.get(name) ?? 0;
     if (now - last < gap) return;
