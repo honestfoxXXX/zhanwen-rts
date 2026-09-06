@@ -21,6 +21,8 @@ export interface UnitDef {
   projectileSpeed: number; // >0 远程弹道，0 近战瞬时
   /** 科技档：1 基础 / 2 军械库 / 3 攻城工坊 */
   tier: 1 | 2 | 3;
+  /** 护甲（0~1）：受到的所有伤害按此比例减免（高阶精英的独占生存能力） */
+  armor?: number;
   /** 克制加成：对指定兵种生效；`building` 键对建筑生效（攻城）。集中在 config.ts 调整 */
   dmgBonus?: Partial<Record<UnitType | 'building', number>>;
 }

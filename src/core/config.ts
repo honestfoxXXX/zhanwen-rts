@@ -20,12 +20,14 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
   infantry: { name: '步兵', cost: 50, pop: 1, trainTime: 3.2, hp: 75, speed: 84, radius: 9, range: 12, aggro: 130, damage: 7, cooldown: 0.7, projectileSpeed: 0, tier: 1, dmgBonus: { archer: 1.5 } },
   archer: { name: '弓手', cost: 80, pop: 1, trainTime: 4.2, hp: 45, speed: 90, radius: 9, range: 125, aggro: 155, damage: 9, cooldown: 1.0, projectileSpeed: 300, tier: 1, dmgBonus: { heavy: 1.6 } },
   heavy: { name: '重装', cost: 200, pop: 3, trainTime: 7.5, hp: 300, speed: 62, radius: 13, range: 14, aggro: 130, damage: 22, cooldown: 1.2, projectileSpeed: 0, tier: 1, dmgBonus: { infantry: 1.5, building: 1.5 } },
-  // T2（军械库）：长枪兵反骑 / 骑士快速袭扰
-  pikeman: { name: '长枪兵', cost: 160, pop: 2, trainTime: 5.5, hp: 140, speed: 66, radius: 9, range: 14, aggro: 130, damage: 15, cooldown: 0.8, projectileSpeed: 0, tier: 2, dmgBonus: { knight: 1.8, heavy: 1.2 } },
-  knight: { name: '骑士', cost: 240, pop: 3, trainTime: 7, hp: 200, speed: 120, radius: 10, range: 12, aggro: 170, damage: 20, cooldown: 0.85, projectileSpeed: 0, tier: 2, dmgBonus: { archer: 1.5 } },
-  // T3（攻城工坊）：投石车破建筑龟缩 / 近卫军人口效率精英
-  catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 10, hp: 280, speed: 46, radius: 12, range: 190, aggro: 190, damage: 45, cooldown: 1.9, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
-  champion: { name: '近卫军', cost: 450, pop: 4, trainTime: 12, hp: 460, speed: 72, radius: 12, range: 14, aggro: 140, damage: 32, cooldown: 1.0, projectileSpeed: 0, tier: 3 },
+  // T2（军械库）：长枪兵反骑 / 骑士快速袭扰。
+  // 数值红线修正：dps/人口必须高于 T1 步兵（10）——"贵=换更少的量"只体现在 dps/金上，
+  // 否则人口顶满后高阶兵反而亏，升本没有意义（实测教训：初版 T2/T3 dps/人口全线 < 10）。
+  pikeman: { name: '长枪兵', cost: 160, pop: 2, trainTime: 5.5, hp: 140, speed: 66, radius: 9, range: 14, aggro: 130, damage: 16, cooldown: 0.7, projectileSpeed: 0, tier: 2, dmgBonus: { knight: 1.8, heavy: 1.2 } },
+  knight: { name: '骑士', cost: 240, pop: 3, trainTime: 7, hp: 220, speed: 120, radius: 10, range: 12, aggro: 170, damage: 26, cooldown: 0.72, projectileSpeed: 0, tier: 2, dmgBonus: { archer: 1.5 } },
+  // T3（攻城工坊）：投石车破建筑龟缩（对建筑 ×3 + 溅射）/ 近卫军重甲精英（28% 减伤）
+  catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 9, hp: 300, speed: 46, radius: 12, range: 190, aggro: 190, damage: 52, cooldown: 1.5, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
+  champion: { name: '近卫军', cost: 450, pop: 4, trainTime: 12, hp: 460, speed: 72, radius: 12, range: 14, aggro: 140, damage: 38, cooldown: 0.73, projectileSpeed: 0, tier: 3, armor: 0.28 },
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {

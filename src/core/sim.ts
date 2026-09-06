@@ -67,7 +67,13 @@ export function pushEvent(w: World, e: SimEvent): void {
 
 export function applyDamage(w: World, target: Unit | Building, dmg: number, by: Side): boolean {
   if (target.dead) return false;
-  target.hp -= dmg;
+  let d = dmg;
+  if (isUnit(target)) {
+    // 护甲：高阶精英的独占减伤（查表确定性安全）
+    const armor = UNIT_DEFS[target.type].armor;
+    if (armor) d *= 1 - armor;
+  }
+  target.hp -= d;
   if (target.hp <= 0) {
     target.dead = true;
     w.stats.kills[by]++;
@@ -485,6 +491,15 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
     targetBuilding: !isUnit(t), melee: def.projectileSpeed === 0,
     from: u.type === 'catapult' ? 'catapult' : 'unit',
   });
+  // 溅射（投石车独占）：石弹落点 90px 内的其他敌方单位受基准伤害 50% —— 对密集阵型的独占威慑
+  if (u.type === 'catapult') {
+    const base = def.damage;
+    for (const o of w.units) {
+      if (o.dead || o === t || o.side === u.side) continue;
+      const dx = o.x - t.x, dy = o.y - t.y;
+      if (dx * dx + dy * dy <= 8100) applyDamage(w, o, base * 0.5, u.side);
+    }
+  }
   if (def.projectileSpeed > 0) {
     const d = dist(u.x, u.y, t.x, t.y);
     w.projectiles.push({

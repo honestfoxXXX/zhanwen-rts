@@ -87,8 +87,15 @@ function playerThink(w: World): void {
   if (barracks.length && w.queue[side].length < 3) {
     const hasSmithy = myB.some(b => b.type === 'smithy' && !b.dead && b.buildT <= 0);
     const hasWorkshop = myB.some(b => b.type === 'workshop' && !b.dead && b.buildT <= 0);
-    const t: UnitType =
-      w.crystals[side] > 500 && hasWorkshop ? (Math.random() < 0.5 ? 'catapult' : 'champion')
+    // 科技攒钱（与 AI 同机制）：矿线达标而科技未建时压住出兵，让金过门槛
+    const wantSmithy = !hasSmithy && mines.length >= 4;
+    const wantWorkshop = hasSmithy && !hasWorkshop && mines.length >= 6;
+    const saving = (wantSmithy && w.crystals[side] < BUILDING_DEFS.smithy.cost + 100) ||
+      (wantWorkshop && w.crystals[side] < BUILDING_DEFS.workshop.cost + 200);
+    // 攒钱期不完全停兵：仍出最便宜的步兵填线，避免两分钟兵力真空
+    const t: UnitType = saving
+      ? 'infantry'
+      : w.crystals[side] > 500 && hasWorkshop ? (Math.random() < 0.5 ? 'catapult' : 'champion')
       : w.crystals[side] > 300 && hasSmithy ? (Math.random() < 0.5 ? 'knight' : 'pikeman')
       : w.crystals[side] > 260 ? 'heavy'
       : w.crystals[side] > 90 ? 'archer'

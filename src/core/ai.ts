@@ -225,7 +225,11 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   }
 
   // —— 造兵（被压着打时排队更深，靠产能而非操作扳回来）
-  const maxQueue = st.defending ? 6 : 3;
+  // 科技攒钱：矿线达标而科技建筑未建时，出兵队列压到 1 让黄金攒过门槛——
+  // 否则造兵优先级永远吸金，军械库/工坊 500/1100 金门槛永远达不到（实测 6 分钟零科技）。
+  let maxQueue = st.defending ? 6 : 3;
+  if (!smithy && mines.length >= 4 && w.crystals[side] < BUILDING_DEFS.smithy.cost + 100) maxQueue = 1;
+  else if (smithy && !workshop && mines.length >= 6 && w.crystals[side] < BUILDING_DEFS.workshop.cost + 200) maxQueue = 1;
   if (barracks.length && w.queue[side].length < maxQueue) {
     const t = pickUnit(w, side, d.weights);
     const ud = UNIT_DEFS[t];
