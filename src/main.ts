@@ -1,7 +1,7 @@
 import { BUILDING_DEFS, MAPS, MAP_H, MAP_W } from './core/config';
 import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
-import type { Projectile, World } from './core/types';
+import type { CivId, Projectile, World } from './core/types';
 import { Camera } from './render/camera';
 import { Effects } from './render/effects';
 import { draw, initRenderer } from './render/renderer';
@@ -135,6 +135,8 @@ const input = new Input(canvas, cam, () => world, ui, {
 
 hud.setSoundLabel(isMuted() ? '关' : '开');
 
+let civSel: CivId = 'central';
+
 function startGame(diff: World['difficulty'], players = 2): void {
   initAudio();
   // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建。
@@ -144,7 +146,11 @@ function startGame(diff: World['difficulty'], players = 2): void {
   const mapIndex = pool[seed % pool.length];
   const map = MAPS[mapIndex];
   initRenderer(map);
-  world = createWorld(diff, seed, mapIndex);
+  // 玩家选文明，AI 分配剩余文明（1v1 随机一个、三人局按序分配）
+  const civPool: CivId[] = (['central', 'nomad', 'knight'] as CivId[]).filter(c => c !== civSel);
+  const civs: CivId[] = [civSel];
+  for (let i = 1; i < players; i++) civs.push(civPool[(seed + i) % civPool.length]);
+  world = createWorld(diff, seed, mapIndex, civs);
   hud.setMapBrief(map.name, map.brief);
   hud.toast(`地形：${map.name} —— ${map.brief}`);
   ui.selection = [];
@@ -440,3 +446,18 @@ window.addEventListener('keydown', e => {
 
 // 阻止移动端双击缩放
 document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+// 菜单：文明选择（三选一）
+const CIV_DESC: Record<CivId, string> = {
+  central: '后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。',
+  nomad: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵风筝袭扰，全队速度 +18%。',
+  knight: '单兵质量 · 会战。全员血 +22% 伤害 +15%，但造价 +25%——输数量，赢会战。',
+};
+document.querySelectorAll('#civSeg button').forEach(b => {
+  b.addEventListener('click', () => {
+    civSel = (b as HTMLElement).dataset.civ as CivId;
+    document.querySelectorAll('#civSeg button').forEach(v => v.classList.toggle('on', v === b));
+    const desc = document.getElementById('civDesc');
+    if (desc) desc.textContent = CIV_DESC[civSel];
+  });
+});
