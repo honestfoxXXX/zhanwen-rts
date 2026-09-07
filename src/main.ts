@@ -104,6 +104,16 @@ const hud = new Hud({
     hud.toast(ui.selection.length ? `后排 ${ui.selection.length} 支` : '没有后排部队');
     play('ui');
   },
+  towerUpgrade: () => {
+    if (!world || state !== 'play' || !ui.selection.length) return;
+    const b = world.buildings.find(v => v.id === ui.selection[0] && v.type === 'tower');
+    if (!b) { hud.toast('没有选中的箭塔'); return; }
+    if (b.level >= 3) { hud.toast('已达最高等级'); return; }
+    const cost = b.level === 1 ? 150 : 300;
+    const ok = issueCommand(world, { type: 'upgradeTower', side: 0, buildingId: b.id });
+    hud.toast(ok ? `箭塔升级中（${b.level}→${b.level + 1} 级）` : `黄金不足（需 ${cost}）`);
+    play('ui');
+  },
   hold: () => {
     if (!world || state !== 'play' || !ui.selection.length) return;
     issueCommand(world, { type: 'hold', side: 0, ids: [...ui.selection] });

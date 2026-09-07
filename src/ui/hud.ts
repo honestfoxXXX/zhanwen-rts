@@ -35,6 +35,7 @@ export interface HudHooks {
   pickFront: () => void;
   pickBack: () => void;
   sound: () => string;
+  towerUpgrade: () => void;
   music: () => string;
 }
 
@@ -79,6 +80,7 @@ export class Hud {
     $('btnRally').addEventListener('click', () => hooks.rally());
     $('btnHold').addEventListener('click', () => hooks.hold());
     $('btnRetreat').addEventListener('click', () => hooks.retreat());
+    $('btnTowerUp').addEventListener('click', () => hooks.towerUpgrade());
     $('btnFront').addEventListener('click', () => hooks.pickFront());
     $('btnBack').addEventListener('click', () => hooks.pickBack());
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
@@ -257,10 +259,14 @@ export class Hud {
       this.els.goal.style.color = '';
     }
 
+    const isCentral = world.civs[0] === 'central';
+    const farmCard = this.buildBtns.get('farm');
+    if (farmCard) farmCard.classList.toggle('hidden', !isCentral);
     for (const [t, btn] of this.buildBtns) {
       const d = BUILDING_DEFS[t];
       let ok = cr >= d.cost;
       if (t === 'mine' && !world.nodes.some(n => n.mineId === null)) ok = false;
+      if (t === 'farm' && !isCentral) continue;
       btn.disabled = !ok;
     }
     const hasSmithy = world.buildings.some(b => b.side === 0 && b.type === 'smithy' && !b.dead && b.buildT <= 0);
