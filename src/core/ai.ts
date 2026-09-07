@@ -1,7 +1,7 @@
-import { BUILDING_DEFS, DIFFICULTY, MAP_H, MAP_W, POP_CAP, UNIT_DEFS } from './config';
-import { canPlace, findBuildSlot, issueCommand, pushEvent } from './sim';
+import { BUILDING_DEFS, CIVS, DIFFICULTY, MAP_H, MAP_W, POP_CAP, UNIT_DEFS } from './config';
+import { canPlace, civOf, findBuildSlot, issueCommand, popCapOf, pushEvent } from './sim';
 import { rngNext } from './rng';
-import type { Building, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
+import type { Building, CivId, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
 
 type DifficultyDef = (typeof DIFFICULTY)[World['difficulty']];
 
@@ -48,10 +48,11 @@ function orderArmy(w: World, side: Side, army: Unit[], x: number, y: number): vo
 /** 撤退集结点：沿「出生点背离地图质心」方向后撤，双轴通用（对角 / 三角都成立） */
 function retreatSpot(w: World, side: Side): Vec {
   const home = w.spawns[side];
-  const dx = home.x - MAP_W / 2, dy = home.y - MAP_H / 2;
+  const dx = MAP_W / 2 - home.x, dy = MAP_H / 2 - home.y;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const x = Math.max(60, Math.min(MAP_W - 60, home.x + (dx / len) * 160));
-  const y = Math.max(60, Math.min(MAP_H - 60, home.y + (dy / len) * 160));
+  // 撤退不回家——驻留在家与质心之间 55% 处（前线驻扎），下一波从这里发起，逐步前压
+  const x = Math.max(60, Math.min(MAP_W - 60, home.x + (dx / len) * (len * 0.55)));
+  const y = Math.max(60, Math.min(MAP_H - 60, home.y + (dy / len) * (len * 0.55)));
   return { x, y };
 }
 
@@ -120,10 +121,14 @@ function pickUnit(w: World, side: Side, weights: Partial<Record<UnitType, number
   return 'infantry';
 }
 
-/** 波次目标：奇数波拔最近的敌方矿场断经济，偶数波推最近的敌方主基地 */
-function pickGoal(w: World, side: Side, hq: Building, waveIndex: number): Vec {
+/** 波次目标：奇数波拔最近的敌方矿场断经济，偶数波推最近的敌方主基地；
+ *  onlyMines（掠夺模式）：永远只袭击矿场，绝不围攻城堡 */
+function pickGoal(w: World, side: Side, hq: Building, waveIndex: number, onlyMines = false): Vec {
   const foes = w.buildings.filter(b => b.side !== side && !b.dead);
-  const wantType = waveIndex % 2 === 1 ? 'mine' : 'hq';
+  // 掠夺模式：以矿为主，但每 3 波穿插一次推家——纯拆矿永远赢不了，必须周期性终结
+  const wantType = onlyMines
+    ? (waveIndex % 3 === 2 ? 'hq' : 'mine')
+    : waveIndex % 2 === 1 ? 'mine' : 'hq';
   let pool = foes.filter(b => b.type === wantType);
   if (!pool.length) pool = foes; // 目标类型打光了就打剩下的
   if (!pool.length) return { x: hq.x, y: hq.y };
@@ -160,22 +165,25 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   const workshop = myB.find(b => b.type === 'workshop');
   const freeNodes = w.nodes.filter(n => n.mineId === null);
 
-  // 96×96 大三角上三方相距 2300+，开局不再贴脸消耗，旧强特调（门槛/间隔/建设缩放）作废；
-  // 保留温和缩放：出兵门槛 ×0.75 / 间隔 ×0.85，小队袭扰在大图上啃不动满编防守，
-  // 必须 30 人口级的波次才能在三方混战里滚出胜负。
-  const scale = 1;
+  // 96×96 大三角上三方相距 2300+，旧强特调作废；行为差异全部由文明 AIProfile 驱动：
+  // 波次门槛/间隔/时长乘数、掠夺模式、塔阵推进、回防半径——每文明一份打法。
+  const cv = civOf(w, side);
+  const p = cv.ai;
   const waveScale = w.players === 3 ? 0.75 : 1;
   const cdScale = w.players === 3 ? 0.85 : 1;
-  const maxMines = Math.round(d.maxMines * scale);
-  const maxBarracks = Math.round(d.maxBarracks * scale);
-  const maxTowers = Math.round(d.maxTowers * scale);
-  const wavePop = d.wavePop * waveScale;
+  const maxMines = Math.round(d.maxMines);
+  const maxBarracks = Math.round(d.maxBarracks);
+  const maxTowers = Math.min(p.towerTarget, Math.round(d.maxTowers));
+  const wavePop = d.wavePop * waveScale * p.wavePopMul;
+  const waveMax = d.waveMax * p.waveMaxMul;
+  const waveCd = d.waveCd * cdScale * p.waveCdMul;
+  const defendR = p.defendRadius;
 
   // —— 家里进了敌人（任意他方）→ 回防。
   // 威胁半径在三人图收紧：三角几何下各家前哨矿与邻居的集结部队相距 ~220-300，
   // 用 1v1 的 300 会让邻居的常备兵力永远算作"来犯之敌"，三方全部锁死在防御态、
   // 波次永不触发、全员对峙到超时。只有真正踩到建筑（<180）才算入侵。
-  const homeR = w.players === 3 ? 180 : 300;
+  const homeR = w.players === 3 ? Math.min(180, defendR) : defendR;
   const threats = w.units.filter(u => u.side !== side && !u.dead && myB.some(b => dist(u.x, u.y, b.x, b.y) < homeR));
   if (threats.length) {
     st.defending = true;
@@ -232,11 +240,11 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   if (!smithy && mines.length >= 4 && w.crystals[side] < BUILDING_DEFS.smithy.cost + 100) maxQueue = 1;
   else if (smithy && !workshop && mines.length >= 6 && w.crystals[side] < BUILDING_DEFS.workshop.cost + 200) maxQueue = 1;
   if (barracks.length && w.queue[side].length < maxQueue) {
-    const t = pickUnit(w, side, d.weights);
+    const t = pickUnit(w, side, { ...d.weights, ...(cv.ai.armyMix ?? {}) });
     const ud = UNIT_DEFS[t];
     // 矿没铺满时给扩张留足预算，避免造兵把经济钱吃光
     const reserve = freeNodes.length && mines.length < maxMines ? BUILDING_DEFS.mine.cost : 0;
-    if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= POP_CAP) {
+    if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= popCapOf(w, side)) {
       issueCommand(w, { type: 'train', side, unit: t });
     }
   }
@@ -246,7 +254,9 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     st.attacking = true;
     st.waveStart = armyHp;
     st.waveAt = w.time;
-    st.goal = pickGoal(w, side, hq, st.waves); // 第 0 波推主基地，之后隔波骚扰矿场
+    st.goal = p.raidMode
+      ? pickGoal(w, side, hq, 1, true) // 掠夺模式：只袭击矿场
+      : pickGoal(w, side, hq, st.waves);
     st.waves++;
     orderArmy(w, side, army, st.goal.x, st.goal.y);
     pushEvent(w, { type: 'wave' }); // 敌袭预警
@@ -254,18 +264,18 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     const nowHp = army.reduce((n, u) => n + u.hp, 0);
     // 波次必须有终点。否则首波一旦占上风，AI 会一直续攻、永远走不到收兵分支，
     // 于是 st.waveCd 永远不会被写回，waveCd 这个难度参数彻底失效，"波次"也名存实亡。
-    const expired = w.time - st.waveAt > d.waveMax;
+    const expired = w.time - st.waveAt > waveMax;
     if (nowHp < st.waveStart * 0.35 || armyPop === 0 || expired) {
       st.attacking = false;
       st.goal = null;
-      st.waveCd = d.waveCd * cdScale;
+      st.waveCd = waveCd;
       if (d.retreat && armyPop > 0) {
         const spot = retreatSpot(w, side);
         orderArmy(w, side, army, spot.x, spot.y);
       }
     } else {
       // 增援：集结点待命的新兵补入进攻（简单档不增援，保持离散波次节奏）
-      const goal = st.goal ?? pickGoal(w, side, hq, st.waves);
+      const goal = st.goal ?? pickGoal(w, side, hq, st.waves, p.raidMode);
       const idlers = army.filter(u => u.order.kind === 'idle');
       if (idlers.length >= 3 && w.difficulty !== 'easy') orderArmy(w, side, idlers, goal.x, goal.y);
     }

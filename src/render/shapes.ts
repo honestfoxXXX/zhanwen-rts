@@ -340,6 +340,44 @@ export function drawUnitStatic(
     g.strokeStyle = steelDark;
     g.lineWidth = 0.8;
     g.stroke();
+  } else if (type === 'horsearcher') {
+    // 游骑兵：马身（骑士简化）+ 骑射短弓
+    shade(vr * 0.05, vr * 0.05, vr * 0.72, vr * 0.4, bodyDark);
+    shade(vr * 0.0, -vr * 0.04, vr * 0.6, vr * 0.3, body);
+    g.fillStyle = 'rgba(255,255,255,0.2)';
+    g.beginPath();
+    g.ellipse(-vr * 0.1, -vr * 0.12, vr * 0.38, vr * 0.12, -0.08, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = bodyDark;
+    g.lineWidth = 1.8;
+    g.beginPath();
+    for (const lx of [vr * 0.38, vr * 0.58, -vr * 0.26, -vr * 0.06]) {
+      g.moveTo(lx, vr * 0.28);
+      g.lineTo(lx + vr * 0.05, vr * 0.55);
+    }
+    g.stroke();
+    g.strokeStyle = bodyDark;
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(-vr * 0.66, -vr * 0.08);
+    g.quadraticCurveTo(-vr * 0.92, vr * 0.04, -vr * 0.84, vr * 0.32);
+    g.stroke();
+    // 骑手 + 短弓
+    shade(-vr * 0.05, -vr * 0.4, vr * 0.2, vr * 0.2, bodyDark);
+    shade(vr * 0.04, -vr * 0.46, vr * 0.14, vr * 0.14, steel);
+    g.strokeStyle = wood;
+    g.lineWidth = 1.7;
+    g.beginPath();
+    g.moveTo(vr * 0.52, -vr * 0.68);
+    g.quadraticCurveTo(vr * 0.86, -vr * 0.22, vr * 0.76, 0);
+    g.quadraticCurveTo(vr * 0.86, vr * 0.22, vr * 0.52, vr * 0.68);
+    g.stroke();
+    g.strokeStyle = 'rgba(244,234,214,0.85)';
+    g.lineWidth = 0.8;
+    g.beginPath();
+    g.moveTo(vr * 0.52, -vr * 0.68);
+    g.lineTo(vr * 0.52, vr * 0.68);
+    g.stroke();
   } else if (type === 'catapult') {
     // 车架（木框 + 斜撑）
     woodFrame(g, -vr * 0.8, -vr * 0.35, vr * 1.7, vr * 0.85);

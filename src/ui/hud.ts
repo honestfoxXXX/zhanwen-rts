@@ -279,6 +279,11 @@ export class Hud {
       if (locked) ok = false;
       btn.disabled = !ok;
       btn.classList.toggle('locked', locked);
+      // 文明差异：游牧弓手位替换为游骑兵（互斥显隐）
+      if (t === 'archer' || t === 'horsearcher') {
+        const show = (t === 'horsearcher') === (world.civs[0] === 'nomad');
+        btn.classList.toggle('hidden', !show);
+      }
       const q = world.queue[0].filter(v => v === t).length;
       let badge = btn.querySelector('.badge');
       if (q > 0) {

@@ -33,10 +33,10 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
-  hq: { name: '城堡', cost: 0, hp: 2800, buildTime: 0, half: 30, income: 4, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
+  hq: { name: '城堡', cost: 0, hp: 2200, buildTime: 0, half: 30, income: 4, weapon: { range: 150, damage: 9, cooldown: 1.2, projectileSpeed: 260 } },
   mine: { name: '金矿', cost: 100, hp: 320, buildTime: 5, half: 30, income: 4, weapon: null },
-  barracks: { name: '军营', cost: 150, hp: 650, buildTime: 8, half: 30, income: 0, weapon: null },
-  tower: { name: '箭塔', cost: 120, hp: 520, buildTime: 6, half: 30, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
+  barracks: { name: '军营', cost: 150, hp: 550, buildTime: 8, half: 30, income: 0, weapon: null },
+  tower: { name: '箭塔', cost: 120, hp: 420, buildTime: 6, half: 30, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
   // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
   smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null, unlocks: 2 },
   workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null, unlocks: 3 },
@@ -325,10 +325,10 @@ export const CIVS: Record<CivId, CivDef> = {
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: false, towerUpgradable: true, towerAnywhere: true, counterBonus: 0,
     ai: {
-      earlyAggro: 1.3, wavePopMul: 1.2, waveCdMul: 1.2, waveMaxMul: 1.25,
+      earlyAggro: 1.3, wavePopMul: 0.8, waveCdMul: 1.2, waveMaxMul: 1.1,
       raidMode: false, towerPush: true, towerTarget: 4, farmTarget: 8,
       workshopTarget: true, defendRadius: 300,
-      armyMix: { infantry: 0.5, archer: 0.25, pikeman: 0.25 },
+      armyMix: { infantry: 0.35, archer: 0.2, pikeman: 0.2, heavy: 0.15, champion: 0.1 },
     },
   },
   nomad: {
@@ -339,7 +339,7 @@ export const CIVS: Record<CivId, CivDef> = {
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: true, towerUpgradable: false, towerAnywhere: false, counterBonus: 0,
     ai: {
-      earlyAggro: 0.55, wavePopMul: 0.6, waveCdMul: 0.55, waveMaxMul: 0.3,
+      earlyAggro: 0.55, wavePopMul: 1.0, waveCdMul: 0.55, waveMaxMul: 0.5,
       raidMode: true, towerPush: false, towerTarget: 0, farmTarget: 0,
       workshopTarget: false, defendRadius: 240,
       armyMix: { knight: 0.4, horsearcher: 0.4, heavy: 0.2 },
@@ -349,11 +349,11 @@ export const CIVS: Record<CivId, CivDef> = {
     id: 'knight', name: '圣辉骑士团',
     desc: '全程 · 单兵质量。全员血 +22% 伤害 +15%，克制加成 +0.3；但造价 +25% 训练 +20%——输数量，赢会战。',
     popCap: 80,
-    unitHpMul: 1.22, unitDmgMul: 1.15, unitSpeedMul: 1.0,
-    trainCostMul: 1.25, trainTimeMul: 1.2,
+    unitHpMul: 1.1, unitDmgMul: 1.06, unitSpeedMul: 1.0,
+    trainCostMul: 1.15, trainTimeMul: 1.1,
     plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.3,
     ai: {
-      earlyAggro: 1.0, wavePopMul: 1.15, waveCdMul: 1.0, waveMaxMul: 1.0,
+      earlyAggro: 1.0, wavePopMul: 1.0, waveCdMul: 1.0, waveMaxMul: 0.9,
       raidMode: false, towerPush: false, towerTarget: 2, farmTarget: 0,
       workshopTarget: true, defendRadius: 300,
       armyMix: { heavy: 0.35, pikeman: 0.3, champion: 0.25, archer: 0.1 },
