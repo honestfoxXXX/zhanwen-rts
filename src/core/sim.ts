@@ -1,7 +1,8 @@
 import {
-  BUILDING_DEFS, COLS, DIFFICULTY, MAP_H, MAPS, MAP_W, POP_CAP,
+  BUILDING_DEFS, CIVS, COLS, DIFFICULTY, MAP_H, MAPS, MAP_W,
   ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
 } from './config';
+import type { CivId } from './types';
 import { findPath, isBlockedTile, lineClear, nearestFreeTile } from './pathfinding';
 import { rngNext } from './rng';
 import { aiThink } from './ai';
@@ -65,6 +66,21 @@ export function pushEvent(w: World, e: SimEvent): void {
   ev(w, e);
 }
 
+/** 文明定义（查表） */
+export function civOf(w: World, side: Side): (typeof CIVS)[CivId] {
+  return CIVS[w.civs[side]] ?? CIVS.central;
+}
+
+/** 各方人口上限（文明差异：中原 100 / 骑士 80 / 游牧 70） */
+export function popCapOf(w: World, side: Side): number {
+  return civOf(w, side).popCap;
+}
+
+/** 单位训练造价（文明修正后） */
+export function trainCost(w: World, side: Side, type: UnitType): number {
+  return Math.round(UNIT_DEFS[type].cost * civOf(w, side).trainCostMul);
+}
+
 export function applyDamage(w: World, target: Unit | Building, dmg: number, by: Side): boolean {
   if (target.dead) return false;
   let d = dmg;
@@ -77,6 +93,14 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
   if (target.hp <= 0) {
     target.dead = true;
     w.stats.kills[by]++;
+    // 游牧掠夺：击杀单位 / 拆建筑按造价比例回金（计入战报收入）
+    if (civOf(w, by).plunder && by !== target.side) {
+      const value = isUnit(target)
+        ? UNIT_DEFS[target.type].cost * 0.3
+        : BUILDING_DEFS[target.type].cost * 0.25;
+      w.crystals[by] += value;
+      w.stats.earned[by] += value;
+    }
     return true;
   }
   return false;
@@ -119,7 +143,12 @@ function markRiverTiles(blocked: Uint8Array, river: { pts: Vec[]; fords: Vec[]; 
   }
 }
 
-export function createWorld(difficulty: World['difficulty'], seed: number, mapIndex = 0): World {
+export const DEFAULT_CIVS: Record<number, CivId[]> = {
+  2: ['central', 'nomad'],
+  3: ['central', 'nomad', 'knight'],
+};
+
+export function createWorld(difficulty: World['difficulty'], seed: number, mapIndex = 0, civs?: CivId[]): World {
   const map = MAPS[mapIndex % MAPS.length];
   const players = map.spawns.length;
   const blocked = new Uint8Array(COLS * ROWS);
@@ -127,6 +156,7 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
   for (const r of map.rivers ?? []) markRiverTiles(blocked, r);
 
   const midX = MAP_W / 2, midY = MAP_H / 2;
+  const civAssign = civs ?? DEFAULT_CIVS[players];
 
   const w: World = {
     tick: 0,
@@ -167,12 +197,13 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
     },
     // 每个阵营一份 AI 状态（0 号位玩家不用，仅占位保持下标对齐）
     crown: { t: 0, side: null },
+    civs: [...civAssign],
     rallyAuto: map.spawns.map((_, i) => i === 0),
     ai: Array.from({ length: players }, () => ({
       thinkT: 1.2, defending: false, attacking: false,
       waveCd: players === 3 ? 27 : 45, // 首波更晚：给双方留出扩张与中期拉锯的时间
       waveStart: 0, waveAt: 0,
-      scout: { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0 },
+      scout: { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0 },
       goal: null,
       waves: 0,
     })),
@@ -188,6 +219,7 @@ function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: numb
     id: w.nextId++,
     side, type,
     x, y, half: d.half,
+    level: 1,
     hp: d.hp, maxHp: d.hp,
     buildT: instant ? 0 : d.buildTime,
     cd: 0,
@@ -230,9 +262,13 @@ export function canPlace(w: World, side: Side, type: BuildingType, x: number, y:
   if (type === 'mine') {
     const n = nearestFreeNode(w, x, y, 48);
     if (!n) return { ok: false, x, y, reason: 'nonode' };
-    return placeAt(w, side, n.x, n.y, true);
+    return placeAt(w, side, type, n.x, n.y, true);
   }
-  return placeAt(w, side, x, y, false);
+  // 农田为中原专属
+  if (type === 'farm' && civOf(w, side).id !== 'central') {
+    return { ok: false, x, y, reason: 'place' };
+  }
+  return placeAt(w, side, type, x, y, false);
 }
 
 /**
@@ -270,15 +306,25 @@ export function findBuildSlot(w: World, side: Side, type: BuildingType, offsets:
   return cands.find(c => canPlace(w, side, type, c.x, c.y).ok) ?? null;
 }
 
-function placeAt(w: World, side: Side, x: number, y: number, isMine: boolean): PlaceResult {
+function placeAt(w: World, side: Side, type: BuildingType, x: number, y: number, isMine: boolean): PlaceResult {
   const cx = Math.round(x / TILE), cy = Math.round(y / TILE);
   if (cx < 1 || cy < 1 || cx >= COLS || cy >= ROWS) return { ok: false, x, y, reason: 'place' };
   for (const [dx, dy] of [[-1, 0], [0, 0], [-1, -1], [0, -1]] as const) {
     if (isBlockedTile(w.blocked, cx + dx, cy + dy)) return { ok: false, x, y, reason: 'place' };
   }
   // 建造区域由出生点定义（矿场除外，可争夺公共矿点）。
-  // 双方图按中线切分；三方图再把上半场按列切成左右两块，分给两个 AI。
+  // 例外 1：中原箭塔可建在己方存活单位 250px 内的任意位置（塔阵推进，有反制手段）
+  // 例外 2：农田仅中原可建（建造区内任意空地，与常规建筑同规则）
   // 边界对齐"建筑占 cy-1..cy 两行"的占位规则，各方刚好贴着自己的边界。
+  if (!isMine && type === 'tower' && civOf(w, side).towerAnywhere) {
+    let guarded = false;
+    for (const u of w.units) {
+      if (u.dead || u.side !== side) continue;
+      const dx = u.x - x, dy = u.y - y;
+      if (dx * dx + dy * dy <= 250 * 250) { guarded = true; break; }
+    }
+    if (guarded) return { ok: true, x: cx * TILE, y: cy * TILE };
+  }
   if (!isMine) {
     const reg = MAPS[w.map].spawns[side].build;
     if (cx < reg.x0 || cx > reg.x1 || cy < reg.y0 || cy > reg.y1) {
@@ -398,9 +444,10 @@ export function issueCommand(w: World, c: Command): boolean {
         if (!hasTech) { ev(w, { type: 'denied', reason }); return false; }
       }
       const d = UNIT_DEFS[c.unit];
-      if (w.crystals[c.side] < d.cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      const cost = trainCost(w, c.side, c.unit);
+      if (w.crystals[c.side] < cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
       if (w.queue[c.side].length >= 12) { ev(w, { type: 'denied', reason: 'queue' }); return false; }
-      w.crystals[c.side] -= d.cost;
+      w.crystals[c.side] -= cost;
       w.queue[c.side].push(c.unit);
       return true;
     }
@@ -415,6 +462,21 @@ export function issueCommand(w: World, c: Command): boolean {
       w.rallyAuto[c.side] = false; // 玩家指定固定集结点后关闭自动跟队
       return true;
     }
+    case 'upgradeTower': {
+      // 中原专属：箭塔升级（等级 1-3），升级期停火、血量保持并按新上限等比增加
+      const b = w.buildings.find(v => v.id === c.buildingId && v.side === c.side && !v.dead);
+      if (!b || b.type !== 'tower') return false;
+      if (b.level >= 3) return false;
+      const cost = b.level === 1 ? 150 : 300;
+      if (w.crystals[c.side] < cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      w.crystals[c.side] -= cost;
+      const oldMax = b.maxHp;
+      b.maxHp = Math.round(b.maxHp * 1.4);
+      b.hp += b.maxHp - oldMax;
+      b.level++;
+      b.buildT = b.level === 2 ? 8 : 12; // 升级期停火（buildT>0 跳过攻击与收入）
+      return true;
+    }
   }
 }
 
@@ -426,6 +488,7 @@ const UNIT_ROLE: Record<UnitType, 'front' | 'ranged' | 'vanguard'> = {
   pikeman: 'front',
   champion: 'front',
   archer: 'ranged',
+  horsearcher: 'ranged',
   catapult: 'ranged',
   knight: 'vanguard',
 };
@@ -477,7 +540,7 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
 }
 
 function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
-  let dmg = def.damage;
+  let dmg = def.damage * civOf(w, u.side).unitDmgMul;
   if (def.dmgBonus) {
     const bonus = isUnit(t) ? def.dmgBonus[t.type] : def.dmgBonus.building;
     if (bonus) dmg *= bonus;
@@ -531,7 +594,7 @@ function followPath(w: World, u: Unit, dt: number, def: (typeof UNIT_DEFS)[UnitT
     return;
   }
   const wp = u.path[u.pathI];
-  if (stepToward(u, wp.x, wp.y, def.speed, dt)) {
+  if (stepToward(u, wp.x, wp.y, def.speed * civOf(w, u.side).unitSpeedMul, dt)) {
     u.pathI++;
     if (u.pathI >= u.path.length && arrived()) u.order = { kind: 'idle' };
   }
@@ -541,7 +604,7 @@ function followPath(w: World, u: Unit, dt: number, def: (typeof UNIT_DEFS)[UnitT
 function chaseTarget(w: World, u: Unit, t: Unit | Building, dt: number, def: (typeof UNIT_DEFS)[UnitType]): void {
   if (lineClear(w.blocked, u.x, u.y, t.x, t.y)) {
     u.path = [];
-    stepToward(u, t.x, t.y, def.speed, dt);
+    stepToward(u, t.x, t.y, def.speed * civOf(w, u.side).unitSpeedMul, dt);
     return;
   }
   u.repathT -= dt;
@@ -730,11 +793,12 @@ function spawnFrom(w: World, b: Building): void {
 
 function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Unit {
   const d = UNIT_DEFS[type];
+  const hp = Math.round(d.hp * civOf(w, side).unitHpMul);
   const u: Unit = {
     id: w.nextId++,
     side, type,
     x, y,
-    hp: d.hp, maxHp: d.hp,
+    hp, maxHp: hp,
     cd: rngNext(w) * 0.3,
     facing: Math.atan2(MAP_H / 2 - y, MAP_W / 2 - x),
     order: { kind: 'idle' },
@@ -757,10 +821,10 @@ function updateProduction(w: World, dt: number): void {
         if (!w.queue[s].length) break;
         const t = w.queue[s][0];
         const d = UNIT_DEFS[t];
-        if (w.popUsed[s] + d.pop > POP_CAP) break;
+        if (w.popUsed[s] + d.pop > popCapOf(w, s as Side)) break;
         w.queue[s].shift();
         b.trainType = t;
-        b.trainT = d.trainTime;
+        b.trainT = d.trainTime * civOf(w, s as Side).trainTimeMul;
         w.popUsed[s] += d.pop;
       }
     }
@@ -788,18 +852,22 @@ function updateBuildings(w: World, dt: number): void {
     }
     const wpn = BUILDING_DEFS[b.type].weapon;
     if (!wpn) continue;
+    // 塔等级加成（中原升级路线）：每级伤害 +40%、射程 +15
+    const lv = b.type === 'tower' ? (b as Building & { level: number }).level - 1 : 0;
+    const wpnDmg = wpn.damage * (1 + lv * 0.4);
+    const wpnRange = wpn.range + lv * 15;
     b.cd = Math.max(0, b.cd - dt);
     let best: Unit | null = null;
     let bd = Infinity;
     for (const u of w.units) {
       if (u.dead || u.side === b.side) continue;
       const d = dist(u.x, u.y, b.x, b.y) - UNIT_DEFS[u.type].radius;
-      if (d <= wpn.range && d < bd) { bd = d; best = u; }
+      if (d <= wpnRange && d < bd) { bd = d; best = u; }
     }
     if (best && b.cd <= 0) {
       b.cd = wpn.cooldown;
       b.facing = Math.atan2(best.y - b.y, best.x - b.x);
-      applyDamage(w, best, wpn.damage, b.side);
+      applyDamage(w, best, wpnDmg, b.side);
       ev(w, {
         type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y,
         side: b.side, big: false, targetSide: best.side, melee: false, from: 'tower',
@@ -962,6 +1030,10 @@ export function hashWorld(w: World): number {
   mixF(w.crown.t);
   mix(w.crown.side === null ? -1 : w.crown.side);
   for (let s2 = 0; s2 < w.players; s2++) mix(w.rallyAuto[s2] ? 1 : 0);
+  for (let s2 = 0; s2 < w.players; s2++) {
+    const ci = w.civs[s2];
+    mix(ci === 'central' ? 1 : ci === 'nomad' ? 2 : 3);
+  }
   return h >>> 0;
 }
 
@@ -975,6 +1047,7 @@ interface WorldSnapshot {
   gameOver: World['gameOver']; stats: World['stats']; ai: World['ai'];
   crown: World['crown'];
   rallyAuto: boolean[];
+  civs: CivId[];
 }
 
 export function serializeWorld(w: World): string {
@@ -984,7 +1057,7 @@ export function serializeWorld(w: World): string {
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
-    gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown, rallyAuto: w.rallyAuto,
+    gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown, rallyAuto: w.rallyAuto, civs: [...w.civs],
   };
   return JSON.stringify(s);
 }
@@ -998,7 +1071,7 @@ export function deserializeWorld(json: string): World {
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),
-    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown, rallyAuto: s.rallyAuto,
+    nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown, rallyAuto: s.rallyAuto, civs: s.civs,
   };
   for (const u of w.units) w.index.set(u.id, u);
   for (const b of w.buildings) w.index.set(b.id, b);

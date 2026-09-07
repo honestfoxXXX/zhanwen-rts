@@ -40,6 +40,7 @@ export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
   archer: { shape: 'arrow', rMul: 1.2, emblem: 'quiver', bob: 0.7 },
   heavy: { shape: 'heater', rMul: 1.18, emblem: 'cross', bob: 0 },
   pikeman: { shape: 'circle', rMul: 1.0, emblem: 'chevron', bob: 0.8 },
+  horsearcher: { shape: 'diamond', rMul: 1.15, emblem: 'quiver', bob: 0 },
   knight: { shape: 'diamond', rMul: 1.3, emblem: 'pennon', bob: 0 },
   catapult: { shape: 'cart', rMul: 1.35, emblem: 'bolt', bob: 0 },
   champion: { shape: 'heater', rMul: 1.35, emblem: 'crown', bob: 0 },

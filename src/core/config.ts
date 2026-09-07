@@ -1,4 +1,4 @@
-import type { Difficulty, Vec, BuildingType, UnitType } from './types';
+import type { CivId, Difficulty, Vec, BuildingType, UnitType } from './types';
 
 export const TILE = 40;
 export const COLS = 96;
@@ -28,6 +28,8 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
   // T3（攻城工坊）：投石车破建筑龟缩（对建筑 ×3 + 溅射）/ 近卫军重甲精英（28% 减伤）
   catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 9, hp: 300, speed: 46, radius: 12, range: 190, aggro: 190, damage: 52, cooldown: 1.5, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
   champion: { name: '近卫军', cost: 450, pop: 4, trainTime: 12, hp: 460, speed: 72, radius: 12, range: 14, aggro: 140, damage: 38, cooldown: 0.73, projectileSpeed: 0, tier: 3, armor: 0.28 },
+  // 游牧专属（替换弓手位）：骑射风筝——快 11%、射程 100（< 弓手 125，有内建反制）
+  horsearcher: { name: '游骑兵', cost: 120, pop: 2, trainTime: 5, hp: 70, speed: 100, radius: 9, range: 100, aggro: 150, damage: 12, cooldown: 0.8, projectileSpeed: 300, tier: 1 },
 };
 
 export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> = {
@@ -38,6 +40,8 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
   smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null, unlocks: 2 },
   workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null, unlocks: 3 },
+  // 中原专属：不占矿点的第二经济（经济纵深，矿被拆仍有底线收入）
+  farm: { name: '农田', cost: 60, hp: 200, buildTime: 6, half: 30, income: 3, weapon: null },
 };
 
 /** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
@@ -271,6 +275,91 @@ export const MAPS: MapDef[] = [
 /** 默认地图（兼容既有引用）：中央关口 */
 export const NODES: Vec[] = MAPS[0].nodes;
 export const ROCK_TILES: [number, number][] = MAPS[0].rocks;
+
+/**
+ * 三大文明：数值修正 + 专属规则 + AI 行为参数，全部数据驱动（确定性查表）。
+ * 时间窗三角：游牧 0-4min 掠夺快袭 / 骑士 3-8min 单兵质量 / 中原 5min+ 塔阵人海。
+ */
+export interface CivDef {
+  id: CivId;
+  name: string;
+  desc: string;
+  popCap: number;
+  /** 单位修正乘数 */
+  unitHpMul: number;
+  unitDmgMul: number;
+  unitSpeedMul: number;
+  /** 训练修正乘数（cost/trainTime） */
+  trainCostMul: number;
+  trainTimeMul: number;
+  /** 游牧：掠夺（击杀 30% / 拆建筑 25% 回金） */
+  plunder: boolean;
+  /** 中原：塔可升级、塔任意建造（己方单位 250 内）、农田 */
+  towerUpgradable: boolean;
+  towerAnywhere: boolean;
+  /** 骑士：克制加成 +0.3（战术素养） */
+  counterBonus: number;
+  /** AI 行为参数（与 DIFFICULTY 正交） */
+  ai: {
+    earlyAggro: number;
+    wavePopMul: number;
+    waveCdMul: number;
+    waveMaxMul: number;
+    raidMode: boolean;
+    towerPush: boolean;
+    towerTarget: number;
+    farmTarget: number;
+    workshopTarget: boolean;
+    defendRadius: number;
+    /** 出兵配比覆盖（缺省走 DIFFICULTY.weights + 科技分层） */
+    armyMix: Partial<Record<UnitType, number>>;
+  };
+}
+
+export const CIVS: Record<CivId, CivDef> = {
+  central: {
+    id: 'central', name: '中原王朝',
+    desc: '后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。',
+    popCap: 100,
+    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 0.92,
+    trainCostMul: 1.0, trainTimeMul: 0.9,
+    plunder: false, towerUpgradable: true, towerAnywhere: true, counterBonus: 0,
+    ai: {
+      earlyAggro: 1.3, wavePopMul: 1.2, waveCdMul: 1.2, waveMaxMul: 1.25,
+      raidMode: false, towerPush: true, towerTarget: 4, farmTarget: 8,
+      workshopTarget: true, defendRadius: 300,
+      armyMix: { infantry: 0.5, archer: 0.25, pikeman: 0.25 },
+    },
+  },
+  nomad: {
+    id: 'nomad', name: '草原游牧',
+    desc: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵风筝袭扰，速度快全队 +18%。',
+    popCap: 70,
+    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.18,
+    trainCostMul: 1.0, trainTimeMul: 0.9,
+    plunder: true, towerUpgradable: false, towerAnywhere: false, counterBonus: 0,
+    ai: {
+      earlyAggro: 0.55, wavePopMul: 0.6, waveCdMul: 0.55, waveMaxMul: 0.3,
+      raidMode: true, towerPush: false, towerTarget: 0, farmTarget: 0,
+      workshopTarget: false, defendRadius: 240,
+      armyMix: { knight: 0.4, horsearcher: 0.4, heavy: 0.2 },
+    },
+  },
+  knight: {
+    id: 'knight', name: '圣辉骑士团',
+    desc: '全程 · 单兵质量。全员血 +22% 伤害 +15%，克制加成 +0.3；但造价 +25% 训练 +20%——输数量，赢会战。',
+    popCap: 80,
+    unitHpMul: 1.22, unitDmgMul: 1.15, unitSpeedMul: 1.0,
+    trainCostMul: 1.25, trainTimeMul: 1.2,
+    plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.3,
+    ai: {
+      earlyAggro: 1.0, wavePopMul: 1.15, waveCdMul: 1.0, waveMaxMul: 1.0,
+      raidMode: false, towerPush: false, towerTarget: 2, farmTarget: 0,
+      workshopTarget: true, defendRadius: 300,
+      armyMix: { heavy: 0.35, pikeman: 0.3, champion: 0.25, archer: 0.1 },
+    },
+  },
+};
 
 export const DIFFICULTY: Record<Difficulty, {
   label: string;

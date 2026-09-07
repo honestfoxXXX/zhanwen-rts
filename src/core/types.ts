@@ -1,7 +1,7 @@
 /** 阵营。0 恒为玩家，1..2 为 AI；实际参战方数由 World.players 决定 */
 export type Side = 0 | 1 | 2;
-export type UnitType = 'infantry' | 'archer' | 'heavy' | 'pikeman' | 'knight' | 'catapult' | 'champion';
-export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower' | 'smithy' | 'workshop';
+export type UnitType = 'infantry' | 'archer' | 'heavy' | 'pikeman' | 'knight' | 'catapult' | 'champion' | 'horsearcher';
+export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower' | 'smithy' | 'workshop' | 'farm';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
 export interface Vec { x: number; y: number }
@@ -76,6 +76,7 @@ export interface Building {
   buildT: number; // 剩余建造时间，<=0 已完工
   cd: number;
   facing: number; // 武器朝向（塔/主基地渲染用）
+  level: number;  // 建筑等级（中原箭塔可升级，1-3）
   trainType: UnitType | null;
   trainT: number;
   rally: Vec | null; // 本兵营独立集结点；null 时回退到 w.rally[side]
@@ -94,6 +95,8 @@ export interface Projectile {
   arrow: boolean; // 箭矢（弓手） vs 炮弹
   lob?: boolean; // 大弧线抛射（投石车）
 }
+
+export type CivId = 'central' | 'nomad' | 'knight';
 
 export type DenyReason = 'cost' | 'pop' | 'nobarracks' | 'place' | 'nonode' | 'queue' | 'nosmithy' | 'noworkshop';
 
@@ -127,7 +130,8 @@ export type Command =
   | WithTick<{ type: 'retreat'; side: Side; ids: number[] }>
   | WithTick<{ type: 'build'; side: Side; building: BuildingType; x: number; y: number }>
   | WithTick<{ type: 'train'; side: Side; unit: UnitType }>
-  | WithTick<{ type: 'rally'; side: Side; x: number; y: number; buildingId?: number }>;
+  | WithTick<{ type: 'rally'; side: Side; x: number; y: number; buildingId?: number }>
+  | WithTick<{ type: 'upgradeTower'; side: Side; buildingId: number }>;
 
 export interface AIState {
   thinkT: number;
@@ -185,6 +189,8 @@ export interface World {
   ai: AIState[];
   /** 王冠之地（3 人局）：连续占领时长与正在占领的一方 */
   crown: { t: number; side: Side | null };
+  /** 各方文明（createWorld 定死，纳入 hash/序列化） */
+  civs: CivId[];
   /** 阵型辅助：集结点是否自动跟随军队质心（玩家默认开；点「集结」设固定点即关闭） */
   rallyAuto: boolean[];
 }
