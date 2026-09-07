@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#141009" />
   <title>战纹 · 竖屏 RTS</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='8' width='16' height='16' rx='3' transform='rotate(45 16 16)' fill='%23dfa53b'/%3E%3C/svg%3E" />
-  <script type="module" crossorigin src="./assets/index-BPGRzveq.js"></script>
+  <script type="module" crossorigin src="./assets/index-Vp3mPfQs.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-B9bJS8yq.css">
 </head>
 <body>
@@ -35,6 +35,9 @@
             <div id="placeHint">放置</div>
             <button id="btnPlaceOk" class="slim ok">✓ 建造</button>
           </div>
+          <div class="row hidden" id="rowTower">
+            <button class="card wide" id="btnTowerUp"><span>⬆ 升级箭塔</span></button>
+          </div>
           <div class="row hidden" id="rowCommand">
             <button class="card wide" id="btnFront"><span>前排</span></button>
             <button class="card wide" id="btnBack"><span>后排</span></button>
@@ -47,10 +50,12 @@
             <button class="card" data-build="tower"><i>▲</i><span>箭塔</span><em>120</em></button>
             <button class="card" data-build="smithy"><i>⚒</i><span>军械库</span><em>400</em></button>
             <button class="card" data-build="workshop"><i>⚙</i><span>工坊</span><em>900</em></button>
+            <button class="card hidden" data-build="farm" id="btnFarm"><i>▤</i><span>农田</span><em>60</em></button>
           </div>
           <div class="row" id="rowUnit">
             <button class="card" data-train="infantry"><i>●</i><span>步兵</span><em>50</em></button>
-            <button class="card" data-train="archer"><i>◗</i><span>弓手</span><em>80</em></button>
+            <button class="card" data-train="horsearcher" data-civ="nomad" id="btnHorsearcher"><i>◤</i><span>游骑兵</span><em>120</em></button>
+            <button class="card" data-train="archer" data-civ="!nomad" id="btnArcher"><i>◗</i><span>弓手</span><em>80</em></button>
             <button class="card" data-train="heavy"><i>⬢</i><span>重装</span><em>200</em></button>
             <button class="card wide" id="btnAll"><span>全选</span></button>
             <button class="card wide" id="btnRally"><span>集结</span></button>
@@ -77,6 +82,12 @@
           <button data-p="2" class="on">1v1 对战</button>
           <button data-p="3">3 人混战</button>
         </div>
+        <div class="seg" id="civSeg">
+          <button data-civ="central" class="on" title="后期 · 塔阵阵地 · 人海">中原王朝</button>
+          <button data-civ="nomad" title="前中期 · 掠夺机动">草原游牧</button>
+          <button data-civ="knight" title="单兵质量 · 会战">圣辉骑士团</button>
+        </div>
+        <p id="civDesc" class="sub" style="font-size:12px;max-width:400px">后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。</p>
         <button id="btnStart" class="primary">开 战</button>
         <ul class="hint">
           <li>⚜ 占领金矿扩张经济，黄金即兵力</li>
