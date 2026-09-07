@@ -728,7 +728,7 @@ export interface UnitDrawOpts {
 
 /**
  * 建筑图标。在 ±16 的设计坐标系内绘制，由 scale 缩放到实际尺寸。
- * 造型之间刻意拉开差距（菱形 / 水晶簇 / 人字顶 / 塔形），远距离也能区分。
+ * 造型之间刻意拉开差距（城堡 / 金矿坑口 / 军营帐篷 / 箭塔剪影），远距离也能区分。
  */
 export function drawBuildingIcon(
   g: CanvasRenderingContext2D,

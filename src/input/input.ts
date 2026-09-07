@@ -1,4 +1,4 @@
-import { MAP_H, MAP_W } from '../core/config';
+import { BUILDING_DEFS, MAP_H, MAP_W } from '../core/config';
 import { canPlace, pickBuildingAt, pickUnitAt, unitsInRect } from '../core/sim';
 import type { BuildingType, Command, World } from '../core/types';
 import type { Camera } from '../render/camera';
@@ -275,7 +275,7 @@ export class Input {
     // 点自家建筑：单击看信息，双击兵营则单独给它设集结点
     const b = pickBuildingAt(world, wp.x, wp.y);
     if (b && b.side === 0) {
-      const name = b.type === 'hq' ? '主基地' : b.type === 'mine' ? '矿场' : b.type === 'barracks' ? '兵营' : '箭塔';
+      const name = BUILDING_DEFS[b.type].name;
       const now = performance.now();
       // 用负 id 作为建筑的双击键，避免与单位 id 撞上
       const isDouble = now - this.lastTap.t < 350 && this.lastTap.id === -b.id &&
@@ -284,7 +284,7 @@ export class Input {
         this.lastTap = { t: 0, id: -1, x: 0, y: 0 };
         this.ui.mode = 'rally';
         this.ui.rallyFor = b.id;
-        this.hooks.toast('点击地图，为该兵营设置集结点');
+        this.hooks.toast('点击地图，为该军营设置集结点');
         return;
       }
       this.lastTap = { t: now, id: -b.id, x: sx, y: sy };

@@ -233,6 +233,23 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     if (slot) issueCommand(w, { type: 'build', side, building: 'workshop', x: slot.x, y: slot.y });
   }
 
+  // —— 中原专属：农田（farmTarget）+ 塔升级 + 塔阵推进
+  const cv2 = civOf(w, side);
+  if (cv2.towerUpgradable || cv2.towerAnywhere) {
+    // 农田补建（farmTarget）
+    const farms = myB.filter(b => b.type === 'farm');
+    const farmTarget = cv2.ai.farmTarget ?? 0;
+    if (farms.length < farmTarget && freeNodes.length && w.crystals[side] >= BUILDING_DEFS.farm.cost) {
+      const slot = findBuildSlot(w, side, 'farm', BARRACK_OFFSETS);
+      if (slot) issueCommand(w, { type: 'build', side, building: 'farm', x: slot.x, y: slot.y });
+    }
+    // 塔升级（有塔且金够时升 1 级）
+    const upgTower = towers.find(t => (t as Building & { level: number }).level < 3);
+    if (upgTower && w.crystals[side] >= (upgTower.level === 1 ? 150 : 300) + 100) {
+      issueCommand(w, { type: 'upgradeTower', side, buildingId: upgTower.id });
+    }
+  }
+
   // —— 造兵（被压着打时排队更深，靠产能而非操作扳回来）
   // 科技攒钱：矿线达标而科技建筑未建时，出兵队列压到 1 让黄金攒过门槛——
   // 否则造兵优先级永远吸金，军械库/工坊 500/1100 金门槛永远达不到（实测 6 分钟零科技）。
