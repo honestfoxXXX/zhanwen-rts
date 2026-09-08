@@ -220,6 +220,7 @@ function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: numb
     side, type,
     x, y, half: d.half,
     level: 1,
+    mineLevel: 0,
     hp: d.hp, maxHp: d.hp,
     buildT: instant ? 0 : d.buildTime,
     cd: 0,

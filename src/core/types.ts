@@ -79,6 +79,7 @@ export interface Building {
   cd: number;
   facing: number; // 武器朝向（塔/主基地渲染用）
   level: number;  // 建筑等级（中原箭塔可升级，1-3）
+  mineLevel: number; // 骑士团金矿等级（0-4，每级附赠箭塔+血量）
   trainType: UnitType | null;
   trainT: number;
   rally: Vec | null; // 本兵营独立集结点；null 时回退到 w.rally[side]
