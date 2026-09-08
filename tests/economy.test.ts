@@ -74,13 +74,13 @@ describe('combat', () => {
       id: 100, side: 0 as const, type: 'infantry' as const,
       x: 360, y: 1400, hp: 75, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 360, lastY: 1400, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: 360, lastY: 1400, dead: false,
     };
     const u2 = {
       id: 101, side: 1 as const, type: 'infantry' as const,
       x: 360, y: 1410, hp: 10, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 360, lastY: 1410, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: 360, lastY: 1410, dead: false,
     };
     w.units.push(u1, u2);
     run(3);
@@ -97,7 +97,7 @@ describe('combat', () => {
       id, side, type: 'infantry' as const,
       x, y, hp, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' } as import('../src/core/types').Order, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: x, lastY: y, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: x, lastY: y, dead: false,
     });
     const mover = mk(400, 0, 360, 1300, 75);
     mover.order = { kind: 'move', x: 360, y: 1640 };
@@ -121,7 +121,7 @@ describe('combat', () => {
       x: 700, y: 3200, hp: UNIT_DEFS.infantry.hp, maxHp: UNIT_DEFS.infantry.hp,
       cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 700, lastY: 3200, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: 700, lastY: 3200, dead: false,
     };
     w.units.push(u);
     run(8); // 塔 dps 13，8s 足够吃掉 75hp（期间敌人会还手但打不动 520hp 的塔）
@@ -137,7 +137,7 @@ describe('combat', () => {
       id: 300, side: 0 as const, type: 'infantry' as const,
       x: 3440, y: 520, hp: 75, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' } as const, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 3440, lastY: 520, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: 3440, lastY: 520, dead: false,
     };
     w.units.push(u);
     run(3);

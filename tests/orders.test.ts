@@ -19,7 +19,7 @@ function mk(w: World, id: number, side: 0 | 1, type: UnitType, x: number, y: num
     hp: hp ?? d.hp, maxHp: hp ?? d.hp,
     cd: 0, facing: 0,
     order: { kind: 'idle' }, engageId: null,
-    path: [], pathI: 0, repathT: 0, stuckT: 0,
+    path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false,
     lastX: x, lastY: y, dead: false,
   };
   w.units.push(u);

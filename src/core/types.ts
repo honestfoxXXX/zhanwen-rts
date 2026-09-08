@@ -63,6 +63,8 @@ export interface Unit {
   repathT: number;
   stuckT: number;
   lastX: number; lastY: number;
+  /** 冲锋判定：移动 ≥1s 后置 true，首攻消费后重置 */
+  charged: boolean;
   dead: boolean;
 }
 

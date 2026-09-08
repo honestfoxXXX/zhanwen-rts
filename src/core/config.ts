@@ -321,7 +321,7 @@ export const CIVS: Record<CivId, CivDef> = {
     id: 'central', name: '中原王朝',
     desc: '后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。',
     popCap: 100,
-    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 0.92,
+    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.0,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: false, towerUpgradable: true, towerAnywhere: true, counterBonus: 0,
     ai: {
@@ -335,7 +335,7 @@ export const CIVS: Record<CivId, CivDef> = {
     id: 'nomad', name: '草原游牧',
     desc: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵风筝袭扰，速度快全队 +18%。',
     popCap: 70,
-    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.18,
+    unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.12,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: true, towerUpgradable: false, towerAnywhere: false, counterBonus: 0,
     ai: {
@@ -347,11 +347,11 @@ export const CIVS: Record<CivId, CivDef> = {
   },
   knight: {
     id: 'knight', name: '圣辉骑士团',
-    desc: '全程 · 单兵质量。全员血 +22% 伤害 +15%，克制加成 +0.3；但造价 +25% 训练 +20%——输数量，赢会战。',
+    desc: '全程 · 单兵质量。全员血 +15% 伤害 +10%，克制加成 +0.5；脱战再生 + 冲锋加成——你的每一支部队都是英雄。',
     popCap: 80,
-    unitHpMul: 1.1, unitDmgMul: 1.06, unitSpeedMul: 1.0,
-    trainCostMul: 1.15, trainTimeMul: 1.1,
-    plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.3,
+    unitHpMul: 1.15, unitDmgMul: 1.10, unitSpeedMul: 1.0,
+    trainCostMul: 1.15, trainTimeMul: 1.2,
+    plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.5,
     ai: {
       earlyAggro: 1.0, wavePopMul: 1.0, waveCdMul: 1.0, waveMaxMul: 0.9,
       raidMode: false, towerPush: false, towerTarget: 2, farmTarget: 0,

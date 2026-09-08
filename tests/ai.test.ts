@@ -57,7 +57,7 @@ describe('AI', () => {
       id: 900, side: 0, type: 'infantry',
       x: 3440, y: 520, hp: 75, maxHp: 75, cd: 0, facing: 0,
       order: { kind: 'idle' }, engageId: null,
-      path: [], pathI: 0, repathT: 0, stuckT: 0, lastX: 3440, lastY: 520, dead: false,
+      path: [], pathI: 0, repathT: 0, stuckT: 0, charged: false, lastX: 3440, lastY: 520, dead: false,
     });
     const steps = 10 * 60;
     for (let i = 0; i < steps; i++) {

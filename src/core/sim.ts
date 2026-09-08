@@ -511,6 +511,7 @@ function formationOffset(w: World, u: Unit, tx: number, ty: number): Vec {
 
 function setMoveOrder(w: World, u: Unit, x: number, y: number): void {
   u.order = { kind: 'move', x, y };
+  u.charged = true; // 冲锋：移动令后首攻加成
   u.engageId = null;
   const p = findPath(w.blocked, u.x, u.y, x, y);
   u.path = p ?? [];
@@ -541,6 +542,11 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
 
 function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
   let dmg = def.damage * civOf(w, u.side).unitDmgMul;
+  // 冲锋：移动后首攻 ×1.4（近战限定）
+  if (u.charged && !def.projectileSpeed) {
+    dmg *= 1.4;
+    u.charged = false;
+  }
   if (def.dmgBonus) {
     const bonus = isUnit(t) ? def.dmgBonus[t.type] : def.dmgBonus.building;
     if (bonus) dmg *= bonus;
@@ -805,6 +811,7 @@ function addUnit(w: World, side: Side, type: UnitType, x: number, y: number): Un
     engageId: null,
     path: [], pathI: 0,
     repathT: 0, stuckT: 0,
+    charged: false,
     lastX: x, lastY: y,
     dead: false,
   };
@@ -969,6 +976,17 @@ export function stepWorld(w: World, dt: number): void {
     p.y = p.sy + (p.ty - p.sy) * k;
   }
   cleanup(w);
+
+  // 圣光洗礼（骑士文明专属）：脱战状态每秒再生 1.5 HP
+  if (w.tick % 30 === 0) {
+    const dt30 = 30 * STEP;
+    for (const u of w.units) {
+      if (u.dead || u.hp >= u.maxHp) continue;
+      if (civOf(w, u.side).id !== 'knight') continue;
+      const hp = Math.min(u.maxHp, u.hp + 1.5 * dt30);
+      u.hp = hp;
+    }
+  }
 
   // 王冠之地终局（3 人局）：600 秒后，质心 350 内唯一驻军（≥12 人口）持续 45 秒即胜
   if (w.players === 3 && w.time >= 600 && w.tick % 15 === 0) {
