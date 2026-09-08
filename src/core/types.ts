@@ -1,6 +1,6 @@
 /** 阵营。0 恒为玩家，1..2 为 AI；实际参战方数由 World.players 决定 */
 export type Side = 0 | 1 | 2;
-export type UnitType = 'infantry' | 'archer' | 'heavy' | 'pikeman' | 'knight' | 'catapult' | 'champion' | 'horsearcher';
+export type UnitType = 'infantry' | 'archer' | 'heavy' | 'pikeman' | 'knight' | 'catapult' | 'champion' | 'horsearcher' | 'healer';
 export type BuildingType = 'hq' | 'barracks' | 'mine' | 'tower' | 'smithy' | 'workshop' | 'farm';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
@@ -80,6 +80,7 @@ export interface Building {
   facing: number; // 武器朝向（塔/主基地渲染用）
   level: number;  // 建筑等级（中原箭塔可升级，1-3）
   mineLevel: number; // 骑士团金矿等级（0-4，每级附赠箭塔+血量）
+  plunderCd?: number; // 游牧掠夺冷却
   trainType: UnitType | null;
   trainT: number;
   rally: Vec | null; // 本兵营独立集结点；null 时回退到 w.rally[side]
@@ -134,7 +135,8 @@ export type Command =
   | WithTick<{ type: 'build'; side: Side; building: BuildingType; x: number; y: number }>
   | WithTick<{ type: 'train'; side: Side; unit: UnitType }>
   | WithTick<{ type: 'rally'; side: Side; x: number; y: number; buildingId?: number }>
-  | WithTick<{ type: 'upgradeTower'; side: Side; buildingId: number }>;
+  | WithTick<{ type: 'upgradeTower'; side: Side; buildingId: number }>
+  | WithTick<{ type: 'upgradeMine'; side: Side; buildingId: number }>;
 
 export interface AIState {
   thinkT: number;

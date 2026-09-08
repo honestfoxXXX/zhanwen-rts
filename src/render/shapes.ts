@@ -44,6 +44,7 @@ export const UNIT_SHAPES: Record<UnitType, UnitShape> = {
   knight: { shape: 'diamond', rMul: 1.3, emblem: 'pennon', bob: 0 },
   catapult: { shape: 'cart', rMul: 1.35, emblem: 'bolt', bob: 0 },
   champion: { shape: 'heater', rMul: 1.35, emblem: 'crown', bob: 0 },
+  healer: { shape: 'circle', rMul: 0.95, emblem: 'cross', bob: 0.5 },
 };
 
 /**

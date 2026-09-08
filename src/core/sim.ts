@@ -100,6 +100,14 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
         : BUILDING_DEFS[target.type].cost * 0.25;
       w.crystals[by] += value;
       w.stats.earned[by] += value;
+      // 掠夺金矿额外收益：每次命中 +2 金（有建筑级冷却）
+      if (target.type === 'mine' && target.buildT <= 0) {
+        const mine = target as Building & { plunderCd?: number };
+        if (!mine.plunderCd || mine.plunderCd <= 0) {
+          w.crystals[by] += 2;
+          mine.plunderCd = 3;
+        }
+      }
     }
     return true;
   }
@@ -203,7 +211,7 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
       thinkT: 1.2, defending: false, attacking: false,
       waveCd: players === 3 ? 27 : 45, // 首波更晚：给双方留出扩张与中期拉锯的时间
       waveStart: 0, waveAt: 0,
-      scout: { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0 },
+      scout: { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0, healer: 0 },
       goal: null,
       waves: 0,
     })),
@@ -463,6 +471,20 @@ export function issueCommand(w: World, c: Command): boolean {
       w.rallyAuto[c.side] = false; // 玩家指定固定集结点后关闭自动跟队
       return true;
     }
+    case 'upgradeMine': {
+      const mine = w.buildings.find(v => v.id === c.buildingId && v.side === c.side && !v.dead && v.type === 'mine');
+      if (!mine) return false;
+      const civ = civOf(w, c.side);
+      if (!civ.mineUpgradable || (mine as Building & { mineLevel: number }).mineLevel >= civ.mineMaxLevel) return false;
+      if (w.crystals[c.side] < civ.mineUpgradeCost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      w.crystals[c.side] -= civ.mineUpgradeCost;
+      const b = mine as Building & { mineLevel: number };
+      b.mineLevel = (b.mineLevel ?? 0) + 1;
+      b.maxHp = Math.round(b.maxHp * 1.3);
+      b.hp += b.maxHp - b.hp > 0 ? b.maxHp - b.hp : 0;
+      b.hp = b.maxHp; // 升级回满血
+      return true;
+    }
     case 'upgradeTower': {
       // 中原专属：箭塔升级（等级 1-3），升级期停火、血量保持并按新上限等比增加
       const b = w.buildings.find(v => v.id === c.buildingId && v.side === c.side && !v.dead);
@@ -491,6 +513,7 @@ const UNIT_ROLE: Record<UnitType, 'front' | 'ranged' | 'vanguard'> = {
   archer: 'ranged',
   horsearcher: 'ranged',
   catapult: 'ranged',
+  healer: 'ranged',
   knight: 'vanguard',
 };
 
@@ -626,6 +649,26 @@ function chaseTarget(w: World, u: Unit, t: Unit | Building, dt: number, def: (ty
 function updateUnit(w: World, u: Unit, dt: number): void {
   const def = UNIT_DEFS[u.type];
   if (u.cd > 0) u.cd = Math.max(0, u.cd - dt);
+
+  // 牧师治疗：周期性治疗射程内血量百分比最低的友军
+  if (u.type === 'healer' && u.cd <= 0) {
+    let target: Unit | null = null;
+    let lowest = 1;
+    for (const o of w.units) {
+      if (o.dead || o.side !== u.side || o === u || o.hp >= o.maxHp) continue;
+      const d = Math.sqrt((o.x - u.x) ** 2 + (o.y - u.y) ** 2);
+      if (d <= def.range) {
+        const frac = o.hp / o.maxHp;
+        if (frac < lowest) { lowest = frac; target = o; }
+      }
+    }
+    if (target) {
+      target.hp = Math.min(target.maxHp, target.hp + 15);
+      u.cd = def.cooldown;
+      u.facing = Math.atan2(target.y - u.y, target.x - u.x);
+    }
+    return;
+  }
 
   let tgt: Unit | Building | null = null;
   if (u.engageId !== null) {

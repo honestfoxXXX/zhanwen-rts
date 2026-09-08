@@ -28,6 +28,7 @@ const COUNTER: Record<UnitType, UnitType> = {
   catapult: 'knight',
   champion: 'pikeman',
   horsearcher: 'pikeman',
+  healer: 'knight',
 };
 
 /** 确定性距离（与 sim 保持一致：不用 Math.hypot） */
@@ -77,7 +78,7 @@ function nextNode(w: World, hq: Building, mineCount: number): CrystalNode | null
 
 /** 侦查：以指数衰减累计所有敌对单位的兵种构成，反映"近期威胁" */
 function updateScout(w: World, side: Side): void {
-  const cnt: Record<UnitType, number> = { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0 };
+  const cnt: Record<UnitType, number> = { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0, healer: 0 };
   for (const u of w.units) {
     if (u.dead || u.side === side) continue;
     cnt[u.type]++;

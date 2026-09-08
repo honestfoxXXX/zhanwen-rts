@@ -28,6 +28,8 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
   // T3（攻城工坊）：投石车破建筑龟缩（对建筑 ×3 + 溅射）/ 近卫军重甲精英（28% 减伤）
   catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 9, hp: 300, speed: 46, radius: 12, range: 190, aggro: 190, damage: 52, cooldown: 1.5, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
   champion: { name: '近卫军', cost: 450, pop: 4, trainTime: 12, hp: 460, speed: 72, radius: 12, range: 14, aggro: 140, damage: 38, cooldown: 0.73, projectileSpeed: 0, tier: 3, armor: 0.28 },
+  // 骑士团专属（军械库解锁）：治疗周围友军，不攻击
+  healer: { name: '牧师', cost: 180, pop: 2, trainTime: 6, hp: 60, speed: 72, radius: 8, range: 80, aggro: 0, damage: 0, cooldown: 2.0, projectileSpeed: 0, tier: 2 },
   // 游牧专属（替换弓手位）：骑射风筝——快 11%、射程 100（< 弓手 125，有内建反制）
   horsearcher: { name: '游骑兵', cost: 120, pop: 2, trainTime: 5, hp: 70, speed: 100, radius: 9, range: 100, aggro: 150, damage: 12, cooldown: 0.8, projectileSpeed: 300, tier: 1 },
 };
@@ -40,6 +42,7 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
   smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null, unlocks: 2 },
   workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null, unlocks: 3 },
+  // 中原专属：不占矿点的安全经济（经济纵深）
   // 中原专属：不占矿点的第二经济（经济纵深，矿被拆仍有底线收入）
   farm: { name: '农田', cost: 60, hp: 200, buildTime: 6, half: 30, income: 3, weapon: null },
 };
@@ -299,6 +302,14 @@ export interface CivDef {
   towerAnywhere: boolean;
   /** 骑士：克制加成 +0.3（战术素养） */
   counterBonus: number;
+  /** 金矿修正（骑士团专属：贵但硬 + 可升级加附属箭塔） */
+  mineCost: number;
+  mineHpMul: number;
+  mineUpgradable: boolean;
+  mineMaxLevel: number;
+  mineUpgradeCost: number;
+  /** 游牧：攻击敌方金矿掠夺金 */
+  minePlunder: boolean;
   /** AI 行为参数（与 DIFFICULTY 正交） */
   ai: {
     earlyAggro: number;
@@ -324,6 +335,7 @@ export const CIVS: Record<CivId, CivDef> = {
     unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.0,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: false, towerUpgradable: true, towerAnywhere: true, counterBonus: 0,
+    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0, minePlunder: false,
     ai: {
       earlyAggro: 1.3, wavePopMul: 0.8, waveCdMul: 1.2, waveMaxMul: 1.1,
       raidMode: false, towerPush: true, towerTarget: 4, farmTarget: 8,
@@ -338,6 +350,7 @@ export const CIVS: Record<CivId, CivDef> = {
     unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.12,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: true, towerUpgradable: false, towerAnywhere: false, counterBonus: 0,
+    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0, minePlunder: true,
     ai: {
       earlyAggro: 0.55, wavePopMul: 1.0, waveCdMul: 0.55, waveMaxMul: 0.5,
       raidMode: true, towerPush: false, towerTarget: 0, farmTarget: 0,
@@ -352,6 +365,7 @@ export const CIVS: Record<CivId, CivDef> = {
     unitHpMul: 1.15, unitDmgMul: 1.10, unitSpeedMul: 1.0,
     trainCostMul: 1.15, trainTimeMul: 1.2,
     plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.5,
+    mineCost: 200, mineHpMul: 3.0, mineUpgradable: true, mineMaxLevel: 4, mineUpgradeCost: 100, minePlunder: false,
     ai: {
       earlyAggro: 1.0, wavePopMul: 1.0, waveCdMul: 1.0, waveMaxMul: 0.9,
       raidMode: false, towerPush: false, towerTarget: 2, farmTarget: 0,
