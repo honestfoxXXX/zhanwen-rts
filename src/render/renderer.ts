@@ -30,6 +30,33 @@ const C = {
 export type GhostInfo = { type: Building['type']; x: number; y: number; valid: boolean } | null
 
 let bgCanvas: HTMLCanvasElement | null = null;
+// 后处理管线：游戏渲染到离屏 → 后处理 → 屏幕
+let sceneCanvas: HTMLCanvasElement | null = null;
+let grainCanvas: HTMLCanvasElement | null = null;
+let grainInit = false;
+
+function initPostFX(cssW: number, cssH: number): void {
+  if (!sceneCanvas || sceneCanvas.width !== Math.round(cssW) || sceneCanvas.height !== Math.round(cssH)) {
+    sceneCanvas = document.createElement('canvas');
+    sceneCanvas.width = Math.round(cssW);
+    sceneCanvas.height = Math.round(cssH);
+  }
+}
+
+function initGrain(): void {
+  if (grainInit) return;
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = 128;
+  grainCanvas.height = 128;
+  const g = grainCanvas.getContext('2d') as CanvasRenderingContext2D;
+  const img = g.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 110 + Math.floor(Math.random() * 36);
+    img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  grainInit = true;
+}
 
 // 3840² 全分辨率画布在 iOS 上逼近内存红线；0.75 分辨率（2880²）是清晰度与内存的平衡点
 const BG_SCALE = 0.75;
@@ -606,12 +633,18 @@ function hpColor(k: number): string {
 }
 
 export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: RenderUI, fxList: { draw: (g: CanvasRenderingContext2D) => void }): void {
+  initPostFX(cam.cssW, cam.cssH);
+  initGrain();
+  const sctx = sceneCanvas!.getContext('2d') as CanvasRenderingContext2D;
+  sctx.clearRect(0, 0, cam.cssW, cam.cssH);
   ctx.clearRect(0, 0, cam.cssW, cam.cssH);
-  ctx.save();
-  ctx.scale(cam.scale, cam.scale);
-  ctx.translate(-cam.x, -cam.y);
 
-  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
+  // 场景渲染到离屏画布
+  sctx.save();
+  sctx.scale(cam.scale, cam.scale);
+  sctx.translate(-cam.x, -cam.y);
+
+  if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
   drawCloudShadows(ctx, w.time);
   drawWaterShimmer(ctx, w.time);
 
@@ -846,7 +879,43 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       ctx.globalAlpha = 1;
     }
   }
-  fxList.draw(ctx);
+  fxList.draw(sctx);
+  sctx.restore();
+
+  // ---- 后处理管线：把离屏场景合成到屏幕并叠加效果 ----
+  // 1) 场景
+  ctx.drawImage(sceneCanvas!, 0, 0);
+  // 2) 暗角
+  const vg = ctx.createRadialGradient(
+    cam.cssW / 2, cam.cssH / 2, Math.min(cam.cssW, cam.cssH) * 0.35,
+    cam.cssW / 2, cam.cssH / 2, Math.max(cam.cssW, cam.cssH) * 0.7,
+  );
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  // 3) 暖色调滤镜（乘法混色 → 统一全画面色温）
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = 'rgba(255,244,220,1)'; // 暖白：把冷色拉暖
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  ctx.restore();
+  // 4) 高光溢出（bloom）：亮区域泛白
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(255,220,140,0.03)';
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  ctx.restore();
+  // 5) 胶片噪点（微妙颗粒感）
+  if (grainCanvas) {
+    ctx.save();
+    ctx.globalAlpha = 0.03;
+    ctx.globalCompositeOperation = 'overlay';
+    const gx = (Math.random() * 128) | 0;
+    const gy = (Math.random() * 128) | 0;
+    ctx.drawImage(grainCanvas, -gx, -gy, cam.cssW + 128, cam.cssH + 128);
+    ctx.restore();
+  }
 
   // 放置幽灵
   if (ui.ghost) {
@@ -905,17 +974,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   ctx.fillRect(0, 0, cam.cssW, cam.cssH);
   ctx.globalCompositeOperation = 'soft-light';
   ctx.fillStyle = 'rgba(255,180,80,0.06)';
-  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
-  ctx.restore();
-  // 暗角（视角聚焦）
-  ctx.save();
-  const vg = ctx.createRadialGradient(
-    cam.cssW / 2, cam.cssH / 2, Math.min(cam.cssW, cam.cssH) * 0.4,
-    cam.cssW / 2, cam.cssH / 2, Math.max(cam.cssW, cam.cssH) * 0.72,
-  );
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.35)');
-  ctx.fillStyle = vg;
   ctx.fillRect(0, 0, cam.cssW, cam.cssH);
   ctx.restore();
 
