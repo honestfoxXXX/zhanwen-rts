@@ -688,6 +688,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.restore();
   }
 
+  drawTowerWalls(ctx, w);
+
   // 建筑（按 y 排序）
   const buildings = [...w.buildings].sort((a, b) => a.y - b.y);
   for (const b of buildings) drawBuilding(ctx, b, w.time);
@@ -859,6 +861,41 @@ function unitSprite(type: UnitType, side: Side): { c: HTMLCanvasElement; s: numb
 // 行军扬尘（纯视觉）：移动中的单位按概率扬起土尘
 const dust: { x: number; y: number; t: number; r: number }[] = [];
 let dustLastTime = -1;
+
+/** 中原箭塔城墙连接：相邻箭塔(<100px)之间画石墙段（纯视觉） */
+function drawTowerWalls(ctx: CanvasRenderingContext2D, w: World): void {
+  if (w.civs[0] !== 'central' && (w.players < 3 || w.civs[1] !== 'central')) return;
+  const towers = w.buildings.filter(b => b.type === 'tower' && !b.dead && b.buildT <= 0);
+  for (let i = 0; i < towers.length; i++) {
+    for (let j = i + 1; j < towers.length; j++) {
+      const a = towers[i], c = towers[j];
+      const dx = c.x - a.x, dy = c.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 100 || d < 5) continue;
+      // 石墙段：厚线 + 砖纹
+      ctx.save();
+      ctx.strokeStyle = '#8d877a';
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y - 4);
+      ctx.lineTo(c.x, c.y - 4);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(40,34,24,0.3)';
+      ctx.lineWidth = 0.7;
+      // 石缝
+      const steps = Math.ceil(d / 8);
+      for (let k = 1; k < steps; k++) {
+        const mx = a.x + (dx * k) / steps, my = a.y - 4 + (dy * k) / steps;
+        ctx.beginPath();
+        ctx.moveTo(mx, my - 3.5);
+        ctx.lineTo(mx, my + 3.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
 
 function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected = false): void {
   const def = UNIT_DEFS[u.type];

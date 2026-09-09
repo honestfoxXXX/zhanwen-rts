@@ -901,6 +901,9 @@ function updateBuildings(w: World, dt: number): void {
       }
       continue;
     }
+    // 掠夺冷却递减
+    const mineB = b as Building & { plunderCd?: number };
+    if (mineB.plunderCd && mineB.plunderCd > 0) mineB.plunderCd -= dt;
     const wpn = BUILDING_DEFS[b.type].weapon;
     if (!wpn) continue;
     // 塔等级加成（中原升级路线）：每级伤害 +40%、射程 +15
