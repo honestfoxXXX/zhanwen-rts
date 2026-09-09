@@ -1,6 +1,6 @@
 /** 纯视觉层特效（不影响模拟确定性） */
 interface Fx {
-  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash' | 'spark' | 'shock';
+  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash' | 'spark' | 'shock' | 'dust';
   x: number; y: number;
   t: number; dur: number;
   r: number;
@@ -82,7 +82,7 @@ export class Effects {
 
   /** 弹道命中点的火花：几条放射短线，一闪而过 */
   spark(x: number, y: number, side: Side): void {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 50 + Math.random() * 60;
       this.add({
@@ -206,6 +206,14 @@ export class Effects {
           g.beginPath();
           g.arc(f.x, f.y, f.r, -0.95 + k * 0.7, 0.95 + k * 0.7);
           g.stroke();
+          break;
+        }
+        case 'dust': {
+          g.globalAlpha = 0.25 * (1 - f.t / f.dur);
+          g.fillStyle = f.color;
+          g.beginPath();
+          g.arc(f.x, f.y, f.r + f.t * 8, 0, Math.PI * 2);
+          g.fill();
           break;
         }
         case 'shock': {

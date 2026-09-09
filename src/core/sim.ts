@@ -229,7 +229,8 @@ function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: numb
     x, y, half: d.half,
     level: 1,
     mineLevel: 0,
-    hp: d.hp, maxHp: d.hp,
+    hp: type === 'mine' ? Math.round(d.hp * (CIVS[w.civs[side]]?.mineHpMul ?? 1)) : d.hp,
+    maxHp: type === 'mine' ? Math.round(d.hp * (CIVS[w.civs[side]]?.mineHpMul ?? 1)) : d.hp,
     buildT: instant ? 0 : d.buildTime,
     cd: 0,
     // 朝向按出生位置推导（面朝地图中心），不依赖"哪一方是玩家"的身份假设

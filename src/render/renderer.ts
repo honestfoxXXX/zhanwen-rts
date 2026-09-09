@@ -179,6 +179,47 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
     g.fill();
   }
 
+  // ---- 地面纹理增强：草丛簇、碎石小径、泥土斑块 ----
+  // 草丛簇（多笔画小草，模拟真实草地密度）
+  for (let i = 0; i < 800; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const clump = 2 + Math.floor(rnd() * 3);
+    const hue = rnd() < 0.7 ? 'rgba(110,160,70,' : 'rgba(90,130,55,';
+    for (let b = 0; b < clump; b++) {
+      const bx = x + (rnd() - 0.5) * 12, by = y + (rnd() - 0.5) * 8;
+      const bh = 3 + rnd() * 4;
+      g.strokeStyle = hue + (0.15 + rnd() * 0.15) + ')';
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(bx, by);
+      g.lineTo(bx + (rnd() - 0.5) * 2, by - bh);
+      g.stroke();
+    }
+  }
+  // 碎石小径
+  for (let i = 0; i < 200; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    g.fillStyle = `rgba(180,170,150,${0.1 + rnd() * 0.1})`;
+    g.beginPath();
+    g.arc(x, y, 0.7 + rnd() * 1.2, 0, Math.PI * 2);
+    g.fill();
+  }
+  // 泥土斑块（不规则形状，增加地面层次）
+  for (let i = 0; i < 60; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 20 + rnd() * 50;
+    g.fillStyle = `rgba(110,85,50,${0.05 + rnd() * 0.06})`;
+    g.beginPath();
+    const np = 5 + Math.floor(rnd() * 3);
+    for (let k = 0; k <= np; k++) {
+      const a = (k / np) * Math.PI * 2;
+      const nr = r * (0.6 + rnd() * 0.4);
+      const px = x + Math.cos(a) * nr, py = y + Math.sin(a) * nr * 0.6;
+      if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+  }
+
   // ---- 河流：岸 → 水面 → 浅滩（有河流的图）----
   riverSamples.length = 0;
   for (const river of map.rivers ?? []) {
@@ -574,6 +615,36 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   drawCloudShadows(ctx, w.time);
   drawWaterShimmer(ctx, w.time);
 
+  // ---- 氛围粒子：漂浮尘埃 + 萤火虫 ----
+  {
+    const t = w.time;
+    // 漂浮尘埃（视野内随机位置，微弱白色小点缓慢下落）
+    ctx.save();
+    for (let i = 0; i < 12; i++) {
+      const px = cam.x + ((i * 331.7 + t * 8) % cam.viewW);
+      const py = cam.y + ((i * 217.3 + t * 4) % cam.viewH);
+      const alpha = 0.06 + 0.04 * Math.sin(t * 2 + i);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(px, py, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 萤火虫（只在暗处 / 夜晚，但当前无昼夜 → 均匀散布少量暖光点）
+    for (let i = 0; i < 4; i++) {
+      const fx = cam.x + ((i * 529.1 + Math.sin(t * 0.3 + i) * 200) % cam.viewW);
+      const fy = cam.y + ((i * 347.7 + Math.cos(t * 0.2 + i) * 150) % cam.viewH);
+      const glow = 0.15 + 0.1 * Math.sin(t * 3 + i * 2);
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = '#ffeb8a';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // 金矿脉矿点：石堆上三颗金块（矿是"挖出来"的，不是浮在空中的图标）
   for (const n of w.nodes) {
     if (n.mineId !== null) continue;
@@ -825,6 +896,28 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     ctx.strokeRect(x, y, Math.abs(x1 - x0), Math.abs(y1 - y0));
     ctx.restore();
   }
+
+  // ---- 全局后处理：暖色调滤镜 + 暗角 + 边缘压暗 ----
+  // 色调层：给全画面叠一层暖色，把冷绿拉向"午后阳光"的战场氛围
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = 'rgba(255,220,150,0.08)';
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = 'rgba(255,180,80,0.06)';
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  ctx.restore();
+  // 暗角（视角聚焦）
+  ctx.save();
+  const vg = ctx.createRadialGradient(
+    cam.cssW / 2, cam.cssH / 2, Math.min(cam.cssW, cam.cssH) * 0.4,
+    cam.cssW / 2, cam.cssH / 2, Math.max(cam.cssW, cam.cssH) * 0.72,
+  );
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  ctx.restore();
 
   // 小地图雷达
   drawMinimap(ctx, w, cam);

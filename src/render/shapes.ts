@@ -63,9 +63,12 @@ export function drawUnitStatic(
   const steel = '#dfe5ee', steelDark = '#3d434f', wood = '#6b4a2a', woodDark = '#4a3520';
   const body = SIDE_FILL[side], bodyDark = SIDE_DARK[side];
 
-  // 接触阴影（随体型）
+  // 接触阴影（软渐变）
   const shW = vr * (type === 'knight' ? 1.15 : type === 'catapult' ? 1.2 : 0.9);
-  g.fillStyle = 'rgba(0,0,0,0.3)';
+  const shGrad = g.createRadialGradient(0, vr * 0.72, 0, 0, vr * 0.72, shW);
+  shGrad.addColorStop(0, 'rgba(0,0,0,0.25)');
+  shGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = shGrad;
   g.beginPath();
   g.ellipse(0, vr * 0.72, shW, shW * 0.42, 0, 0, Math.PI * 2);
   g.fill();

@@ -153,6 +153,12 @@ button:disabled { opacity: 0.35; cursor: default; }
   display: flex; flex-direction: column; align-items: center; gap: 0;
   padding: 4px 2px;
   position: relative;
+  background: linear-gradient(180deg, rgba(255,230,160,0.06), rgba(0,0,0,0) 50%);
+  border-radius: 6px;
+}
+.card:active {
+  transform: scale(0.94);
+  box-shadow: 0 0 8px rgba(201,162,39,0.3);
 }
 .card i { font-style: normal; font-size: 13px; line-height: 1.15; color: #b3a284; }
 .card span { font-size: 11px; }
