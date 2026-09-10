@@ -645,37 +645,37 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   sctx.translate(-cam.x, -cam.y);
 
   if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
-  drawCloudShadows(ctx, w.time);
-  drawWaterShimmer(ctx, w.time);
+  drawCloudShadows(sctx, w.time);
+  drawWaterShimmer(sctx, w.time);
 
   // ---- 氛围粒子：漂浮尘埃 + 萤火虫 ----
   {
     const t = w.time;
     // 漂浮尘埃（视野内随机位置，微弱白色小点缓慢下落）
-    ctx.save();
+    sctx.save();
     for (let i = 0; i < 12; i++) {
       const px = cam.x + ((i * 331.7 + t * 8) % cam.viewW);
       const py = cam.y + ((i * 217.3 + t * 4) % cam.viewH);
       const alpha = 0.06 + 0.04 * Math.sin(t * 2 + i);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(px, py, 0.8, 0, Math.PI * 2);
-      ctx.fill();
+      sctx.globalAlpha = alpha;
+      sctx.fillStyle = '#fff';
+      sctx.beginPath();
+      sctx.arc(px, py, 0.8, 0, Math.PI * 2);
+      sctx.fill();
     }
     // 萤火虫（只在暗处 / 夜晚，但当前无昼夜 → 均匀散布少量暖光点）
     for (let i = 0; i < 4; i++) {
       const fx = cam.x + ((i * 529.1 + Math.sin(t * 0.3 + i) * 200) % cam.viewW);
       const fy = cam.y + ((i * 347.7 + Math.cos(t * 0.2 + i) * 150) % cam.viewH);
       const glow = 0.15 + 0.1 * Math.sin(t * 3 + i * 2);
-      ctx.globalAlpha = glow;
-      ctx.fillStyle = '#ffeb8a';
-      ctx.beginPath();
-      ctx.arc(fx, fy, 1.2, 0, Math.PI * 2);
-      ctx.fill();
+      sctx.globalAlpha = glow;
+      sctx.fillStyle = '#ffeb8a';
+      sctx.beginPath();
+      sctx.arc(fx, fy, 1.2, 0, Math.PI * 2);
+      sctx.fill();
     }
-    ctx.globalAlpha = 1;
-    ctx.restore();
+    sctx.globalAlpha = 1;
+    sctx.restore();
   }
 
   // 金矿脉矿点：石堆上三颗金块（矿是"挖出来"的，不是浮在空中的图标）
@@ -683,125 +683,125 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     if (n.mineId !== null) continue;
     const pulse = 1 + 0.1 * Math.sin(w.time * 3 + n.id * 1.7);
     const float = Math.sin(w.time * 2 + n.id) * 1.5;
-    ctx.save();
-    ctx.translate(n.x, n.y + float);
+    sctx.save();
+    sctx.translate(n.x, n.y + float);
     // 地面光晕
-    ctx.fillStyle = 'rgba(240,194,78,0.12)';
-    ctx.beginPath();
-    ctx.ellipse(0, 8, 14, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.scale(pulse, pulse);
+    sctx.fillStyle = 'rgba(240,194,78,0.12)';
+    sctx.beginPath();
+    sctx.ellipse(0, 8, 14, 5, 0, 0, Math.PI * 2);
+    sctx.fill();
+    sctx.scale(pulse, pulse);
     // 石堆
-    ctx.fillStyle = '#57544d';
-    ctx.beginPath();
-    ctx.ellipse(0, 3, 12, 5.5, 0, 0, Math.PI * 2);
-    ctx.fill();
+    sctx.fillStyle = '#57544d';
+    sctx.beginPath();
+    sctx.ellipse(0, 3, 12, 5.5, 0, 0, Math.PI * 2);
+    sctx.fill();
     // 三颗金块
-    ctx.shadowColor = 'rgba(240,194,78,0.8)';
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = C.crystal;
+    sctx.shadowColor = 'rgba(240,194,78,0.8)';
+    sctx.shadowBlur = 12;
+    sctx.fillStyle = C.crystal;
     for (const [gx, gy, gr] of [[-4, 1, 5], [4, 2, 4], [0, -4, 4]] as const) {
-      ctx.beginPath();
-      ctx.arc(gx, gy, gr, 0, Math.PI * 2);
-      ctx.fill();
+      sctx.beginPath();
+      sctx.arc(gx, gy, gr, 0, Math.PI * 2);
+      sctx.fill();
     }
-    ctx.shadowBlur = 0;
+    sctx.shadowBlur = 0;
     // 高光
-    ctx.fillStyle = '#ffe9a8';
+    sctx.fillStyle = '#ffe9a8';
     for (const [gx, gy] of [[-5.5, -0.5], [3, 1], [-1, -5]] as const) {
-      ctx.beginPath();
-      ctx.arc(gx, gy, 1.3, 0, Math.PI * 2);
-      ctx.fill();
+      sctx.beginPath();
+      sctx.arc(gx, gy, 1.3, 0, Math.PI * 2);
+      sctx.fill();
     }
-    ctx.restore();
+    sctx.restore();
   }
 
   // 集结点（玩家）
   const r0 = w.rally[0];
-  ctx.save();
-  ctx.strokeStyle = 'rgba(201,162,39,0.8)';
-  ctx.fillStyle = 'rgba(201,162,39,0.8)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(r0.x, r0.y, 5, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(r0.x, r0.y);
-  ctx.lineTo(r0.x, r0.y - 18);
-  ctx.stroke();
+  sctx.save();
+  sctx.strokeStyle = 'rgba(201,162,39,0.8)';
+  sctx.fillStyle = 'rgba(201,162,39,0.8)';
+  sctx.lineWidth = 2;
+  sctx.beginPath();
+  sctx.arc(r0.x, r0.y, 5, 0, Math.PI * 2);
+  sctx.stroke();
+  sctx.beginPath();
+  sctx.moveTo(r0.x, r0.y);
+  sctx.lineTo(r0.x, r0.y - 18);
+  sctx.stroke();
   const wave = Math.sin(w.time * 6) * 1.5;
-  ctx.beginPath();
-  ctx.moveTo(r0.x, r0.y - 18);
-  ctx.quadraticCurveTo(r0.x + 6, r0.y - 17 + wave, r0.x + 12, r0.y - 14 + wave);
-  ctx.lineTo(r0.x, r0.y - 10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  sctx.beginPath();
+  sctx.moveTo(r0.x, r0.y - 18);
+  sctx.quadraticCurveTo(r0.x + 6, r0.y - 17 + wave, r0.x + 12, r0.y - 14 + wave);
+  sctx.lineTo(r0.x, r0.y - 10);
+  sctx.closePath();
+  sctx.fill();
+  sctx.restore();
 
   // 建造区轮廓（放置模式提示：告诉玩家边界在哪）
   if (ui.mode === 'place') {
     const reg = curMap.spawns[0].build;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(245,236,210,0.5)';
-    ctx.fillStyle = 'rgba(245,236,210,0.045)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([12, 8]);
+    sctx.save();
+    sctx.strokeStyle = 'rgba(245,236,210,0.5)';
+    sctx.fillStyle = 'rgba(245,236,210,0.045)';
+    sctx.lineWidth = 2;
+    sctx.setLineDash([12, 8]);
     const rx = reg.x0 * TILE, ry = reg.y0 * TILE;
     const rw = (reg.x1 - reg.x0 + 1) * TILE, rh = (reg.y1 - reg.y0 + 1) * TILE;
-    ctx.fillRect(rx, ry, rw, rh);
-    ctx.strokeRect(rx, ry, rw, rh);
-    ctx.setLineDash([]);
-    ctx.restore();
+    sctx.fillRect(rx, ry, rw, rh);
+    sctx.strokeRect(rx, ry, rw, rh);
+    sctx.setLineDash([]);
+    sctx.restore();
   }
 
   // 军营独立集结点小旗（金角旗，与全局旗区分）
   for (const b of w.buildings) {
     if (b.side !== 0 || b.type !== 'barracks' || !b.rally) continue;
-    ctx.save();
-    ctx.strokeStyle = SIDE[0];
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(b.rally.x, b.rally.y);
-    ctx.lineTo(b.rally.x, b.rally.y - 12);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,232,160,0.92)';
-    ctx.beginPath();
-    ctx.moveTo(b.rally.x, b.rally.y - 12);
-    ctx.lineTo(b.rally.x + 7, b.rally.y - 10);
-    ctx.lineTo(b.rally.x, b.rally.y - 8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    sctx.save();
+    sctx.strokeStyle = SIDE[0];
+    sctx.lineWidth = 1.6;
+    sctx.beginPath();
+    sctx.moveTo(b.rally.x, b.rally.y);
+    sctx.lineTo(b.rally.x, b.rally.y - 12);
+    sctx.stroke();
+    sctx.fillStyle = 'rgba(255,232,160,0.92)';
+    sctx.beginPath();
+    sctx.moveTo(b.rally.x, b.rally.y - 12);
+    sctx.lineTo(b.rally.x + 7, b.rally.y - 10);
+    sctx.lineTo(b.rally.x, b.rally.y - 8);
+    sctx.closePath();
+    sctx.fill();
+    sctx.restore();
   }
 
   // 选中圈（旋转虚线，画在单位下面）
   if (ui.selection.length) {
-    ctx.save();
-    ctx.strokeStyle = C.select;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.lineDashOffset = -w.time * 16;
+    sctx.save();
+    sctx.strokeStyle = C.select;
+    sctx.lineWidth = 2;
+    sctx.setLineDash([6, 4]);
+    sctx.lineDashOffset = -w.time * 16;
     for (const id of ui.selection) {
       const u = w.index.get(id) as Unit | undefined; // 走索引，避免每帧线性查找
       if (!u || u.dead) continue;
       const r = UNIT_DEFS[u.type].radius;
-      ctx.beginPath();
-      ctx.ellipse(u.x, u.y + 3, r + 5, r + 3, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      sctx.beginPath();
+      sctx.ellipse(u.x, u.y + 3, r + 5, r + 3, 0, 0, Math.PI * 2);
+      sctx.stroke();
     }
-    ctx.restore();
+    sctx.restore();
   }
 
-  drawTowerWalls(ctx, w);
+  drawTowerWalls(sctx, w);
 
   // 建筑（按 y 排序）
   const buildings = [...w.buildings].sort((a, b) => a.y - b.y);
-  for (const b of buildings) drawBuilding(ctx, b, w.time);
+  for (const b of buildings) drawBuilding(sctx, b, w.time);
 
   // 单位（按 y 排序）
   const sel = new Set(ui.selection);
   const units = [...w.units].sort((a, b) => a.y - b.y);
-  for (const u of units) drawUnit(ctx, u, w.time, sel.has(u.id));
+  for (const u of units) drawUnit(sctx, u, w.time, sel.has(u.id));
 
   // 弹道：箭矢 / 炮弹（高度弧线 + 地面影子）
   for (const p of w.projectiles) {
@@ -811,45 +811,45 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     const k = Math.max(0, Math.min(1, p.t / p.dur));
     const lift = Math.sin(k * Math.PI) * (p.arrow ? 9 : 6);
     // 地面影子
-    ctx.fillStyle = 'rgba(0,0,0,0.16)';
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 2, 2.6 - lift * 0.09, 1.4 - lift * 0.04, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.save();
-    ctx.translate(0, -lift);
+    sctx.fillStyle = 'rgba(0,0,0,0.16)';
+    sctx.beginPath();
+    sctx.ellipse(p.x, p.y + 2, 2.6 - lift * 0.09, 1.4 - lift * 0.04, 0, 0, Math.PI * 2);
+    sctx.fill();
+    sctx.save();
+    sctx.translate(0, -lift);
     if (p.arrow) {
-      ctx.strokeStyle = SIDE[p.side];
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(p.x - ux * 11, p.y - uy * 11);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(p.x - ux * 4 - uy * 2.5, p.y - uy * 4 + ux * 2.5);
-      ctx.lineTo(p.x, p.y);
-      ctx.lineTo(p.x - ux * 4 + uy * 2.5, p.y - uy * 4 - ux * 2.5);
-      ctx.closePath();
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fill();
+      sctx.strokeStyle = SIDE[p.side];
+      sctx.lineWidth = 1.6;
+      sctx.beginPath();
+      sctx.moveTo(p.x - ux * 11, p.y - uy * 11);
+      sctx.lineTo(p.x, p.y);
+      sctx.stroke();
+      sctx.beginPath();
+      sctx.moveTo(p.x - ux * 4 - uy * 2.5, p.y - uy * 4 + ux * 2.5);
+      sctx.lineTo(p.x, p.y);
+      sctx.lineTo(p.x - ux * 4 + uy * 2.5, p.y - uy * 4 - ux * 2.5);
+      sctx.closePath();
+      sctx.fillStyle = '#e2e8f0';
+      sctx.fill();
     } else {
       const tail = Math.min(16, d * 0.3);
-      ctx.strokeStyle = p.big ? 'rgba(251,191,36,0.8)' : SIDE[p.side];
-      ctx.globalAlpha = 0.85;
-      ctx.lineWidth = p.big ? 3 : 1.8;
-      ctx.beginPath();
-      ctx.moveTo(p.x - ux * tail, p.y - uy * tail);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.shadowColor = p.big ? '#fbbf24' : SIDE[p.side];
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.big ? 2.6 : 1.7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      sctx.strokeStyle = p.big ? 'rgba(251,191,36,0.8)' : SIDE[p.side];
+      sctx.globalAlpha = 0.85;
+      sctx.lineWidth = p.big ? 3 : 1.8;
+      sctx.beginPath();
+      sctx.moveTo(p.x - ux * tail, p.y - uy * tail);
+      sctx.lineTo(p.x, p.y);
+      sctx.stroke();
+      sctx.globalAlpha = 1;
+      sctx.shadowColor = p.big ? '#fbbf24' : SIDE[p.side];
+      sctx.shadowBlur = 6;
+      sctx.fillStyle = '#fff';
+      sctx.beginPath();
+      sctx.arc(p.x, p.y, p.big ? 2.6 : 1.7, 0, Math.PI * 2);
+      sctx.fill();
+      sctx.shadowBlur = 0;
     }
-    ctx.restore();
+    sctx.restore();
   }
 
   // 行军扬尘：更新 + 绘制（土色渐大渐淡）
@@ -870,71 +870,36 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     }
     if (dust.length) {
       for (const d of dust) {
-        ctx.globalAlpha = 0.3 * (1 - d.t / 0.7);
-        ctx.fillStyle = '#b9a77f';
-        ctx.beginPath();
-        ctx.arc(d.x, d.y, d.r + d.t * 5, 0, Math.PI * 2);
-        ctx.fill();
+        sctx.globalAlpha = 0.3 * (1 - d.t / 0.7);
+        sctx.fillStyle = '#b9a77f';
+        sctx.beginPath();
+        sctx.arc(d.x, d.y, d.r + d.t * 5, 0, Math.PI * 2);
+        sctx.fill();
       }
-      ctx.globalAlpha = 1;
+      sctx.globalAlpha = 1;
     }
+  }
+  // 放置幽灵（世界空间，画在场景层上，位于特效之下）
+  if (ui.ghost) {
+    const gh = ui.ghost;
+    const cx = Math.round(gh.x / TILE), cy = Math.round(gh.y / TILE);
+    sctx.fillStyle = gh.valid ? C.ghostOk : C.ghostBad;
+    sctx.strokeStyle = gh.valid ? C.ghostOkEdge : C.ghostBadEdge;
+    sctx.lineWidth = 2;
+    sctx.fillRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
+    sctx.strokeRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
+    sctx.globalAlpha = 0.85;
+    sctx.fillStyle = gh.valid ? '#f5ecd2' : '#f0a3a3';
+    sctx.font = '600 12px sans-serif';
+    sctx.textAlign = 'center';
+    sctx.fillText(BUILDING_DEFS[gh.type].name, gh.x, gh.y + 4);
+    sctx.globalAlpha = 1;
   }
   fxList.draw(sctx);
   sctx.restore();
 
-  // ---- 后处理管线：把离屏场景合成到屏幕并叠加效果 ----
-  // 1) 场景
+  // ---- 后处理：场景合成到屏幕 ----
   ctx.drawImage(sceneCanvas!, 0, 0);
-  // 2) 暗角
-  const vg = ctx.createRadialGradient(
-    cam.cssW / 2, cam.cssH / 2, Math.min(cam.cssW, cam.cssH) * 0.35,
-    cam.cssW / 2, cam.cssH / 2, Math.max(cam.cssW, cam.cssH) * 0.7,
-  );
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.38)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
-  // 3) 暖色调滤镜（乘法混色 → 统一全画面色温）
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.fillStyle = 'rgba(255,244,220,1)'; // 暖白：把冷色拉暖
-  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
-  ctx.restore();
-  // 4) 高光溢出（bloom）：亮区域泛白
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.fillStyle = 'rgba(255,220,140,0.03)';
-  ctx.fillRect(0, 0, cam.cssW, cam.cssH);
-  ctx.restore();
-  // 5) 胶片噪点（微妙颗粒感）
-  if (grainCanvas) {
-    ctx.save();
-    ctx.globalAlpha = 0.03;
-    ctx.globalCompositeOperation = 'overlay';
-    const gx = (Math.random() * 128) | 0;
-    const gy = (Math.random() * 128) | 0;
-    ctx.drawImage(grainCanvas, -gx, -gy, cam.cssW + 128, cam.cssH + 128);
-    ctx.restore();
-  }
-
-  // 放置幽灵
-  if (ui.ghost) {
-    const gh = ui.ghost;
-    const cx = Math.round(gh.x / TILE), cy = Math.round(gh.y / TILE);
-    ctx.fillStyle = gh.valid ? C.ghostOk : C.ghostBad;
-    ctx.strokeStyle = gh.valid ? C.ghostOkEdge : C.ghostBadEdge;
-    ctx.lineWidth = 2;
-    ctx.fillRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
-    ctx.strokeRect(cx * TILE - TILE, cy * TILE - TILE, TILE * 2, TILE * 2);
-    ctx.globalAlpha = 0.85;
-    ctx.fillStyle = gh.valid ? '#f5ecd2' : '#f0a3a3';
-    ctx.font = '600 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(BUILDING_DEFS[gh.type].name, gh.x, gh.y + 4);
-    ctx.globalAlpha = 1;
-  }
-
-  ctx.restore();
 
   // 暗角
   const key = `${cam.cssW}x${cam.cssH}`;
