@@ -9,8 +9,9 @@
  * 用来观察不同难度下的胜率与单局时长。改完 config.ts 后跑一遍，
  * 就能判断数值改动是变好还是变坏。
  */
-import { BUILDING_DEFS, DIFFICULTY, MAPS, UNIT_DEFS } from '../src/core/config';
-import { findBuildSlot, createWorld, issueCommand, stepWorld } from '../src/core/sim';
+import { BUILDING_DEFS, CROWN_WINDOW, DIFFICULTY, MAP_H, MAPS, MAP_W, UNIT_DEFS } from '../src/core/config';
+import { createWorld, issueCommand, stepWorld } from '../src/core/sim';
+import { playerThink } from './scriptedPlayer';
 import type { Difficulty, UnitType, World } from '../src/core/types';
 
 const STEP = 1 / 60;
@@ -26,107 +27,6 @@ const mapPool = MAPS
 // A/B 对照：关掉克制关系跑一遍基线
 if (process.env.ZW_NO_COUNTER === '1') {
   for (const t of Object.keys(UNIT_DEFS) as UnitType[]) delete UNIT_DEFS[t].dmgBonus;
-}
-
-/**
- * 脚本玩家的建造位：与 AI 同一套「+y 指向质心」的偏移坐标系（由 findBuildSlot 旋转）。
- * 1v1 里玩家基地在正南方、质心在正上方，旋转 180° 后与旧写死坐标完全一致。
- */
-const P_BARRACKS: [number, number][] = [[160, 140], [-160, 140], [160, 260]];
-const P_TOWERS: [number, number][] = [[80, 340], [-80, 340]];
-const P_MAX_MINES = 8;
-// 三人图的贴身消耗战里兵力攒不起来，脚本玩家的出击门槛也要跟着人数走；
-// 1v1 大图上防守方援军近在咫尺，半军出击就是送死 —— 要攒到接近满编
-const P_WAVE_POP = forcedPlayers === 3 ? 24 : 50;
-
-function playerThink(w: World): void {
-  const side = 0 as const;
-  const myB = w.buildings.filter(b => b.side === side && !b.dead);
-  const hq = myB.find(b => b.type === 'hq');
-  if (!hq) return;
-
-  const mines = myB.filter(b => b.type === 'mine');
-  const barracksAll = myB.filter(b => b.type === 'barracks');
-  const barracks = barracksAll.filter(b => b.buildT <= 0);
-  const towers = myB.filter(b => b.type === 'tower');
-  const free = w.nodes.filter(n => n.mineId === null);
-
-  // 经济：铺矿（先自家附近，后全场争夺）
-  if (mines.length < P_MAX_MINES && free.length && w.crystals[side] >= BUILDING_DEFS.mine.cost) {
-    let pool = free.filter(n => Math.hypot(n.x - hq.x, n.y - hq.y) < 500);
-    if (!pool.length || mines.length >= 2) pool = free;
-    let best = pool[0], bd = Infinity;
-    for (const n of pool) {
-      const d = (n.x - hq.x) ** 2 + (n.y - hq.y) ** 2;
-      if (d < bd) { bd = d; best = n; }
-    }
-    issueCommand(w, { type: 'build', side, building: 'mine', x: best.x, y: best.y });
-  }
-
-  // 兵营 / 箭塔（与 AI 同一套取位逻辑，按质心方位旋转）
-  if (barracksAll.length < 3 && w.crystals[side] >= BUILDING_DEFS.barracks.cost + 60 && mines.length >= 1) {
-    const slot = findBuildSlot(w, side, 'barracks', P_BARRACKS);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'barracks', x: slot.x, y: slot.y });
-  }
-  if (towers.length < 1 && w.crystals[side] >= BUILDING_DEFS.tower.cost + 140 && mines.length >= 2) {
-    const slot = findBuildSlot(w, side, 'tower', P_TOWERS);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'tower', x: slot.x, y: slot.y });
-  }
-  // 科技建筑阶梯（与 AI 同规则：矿线达标后投资二/三本）
-  if (!myB.some(b => b.type === 'smithy') && mines.length >= 4 && w.crystals[side] >= BUILDING_DEFS.smithy.cost + 100) {
-    const slot = findBuildSlot(w, side, 'smithy', P_BARRACKS);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'smithy', x: slot.x, y: slot.y });
-  }
-  if (myB.some(b => b.type === 'smithy' && !b.dead) && !myB.some(b => b.type === 'workshop') &&
-      mines.length >= 6 && w.crystals[side] >= BUILDING_DEFS.workshop.cost + 200) {
-    const slot = findBuildSlot(w, side, 'workshop', P_BARRACKS);
-    if (slot) issueCommand(w, { type: 'build', side, building: 'workshop', x: slot.x, y: slot.y });
-  }
-
-  // 造兵：按固定配比，钱够就排队
-  if (barracks.length && w.queue[side].length < 3) {
-    const hasSmithy = myB.some(b => b.type === 'smithy' && !b.dead && b.buildT <= 0);
-    const hasWorkshop = myB.some(b => b.type === 'workshop' && !b.dead && b.buildT <= 0);
-    // 科技攒钱（与 AI 同机制）：矿线达标而科技未建时压住出兵，让金过门槛
-    const wantSmithy = !hasSmithy && mines.length >= 4;
-    const wantWorkshop = hasSmithy && !hasWorkshop && mines.length >= 6;
-    const saving = (wantSmithy && w.crystals[side] < BUILDING_DEFS.smithy.cost + 100) ||
-      (wantWorkshop && w.crystals[side] < BUILDING_DEFS.workshop.cost + 200);
-    // 攒钱期不完全停兵：仍出最便宜的步兵填线，避免两分钟兵力真空
-    const t: UnitType = saving
-      ? 'infantry'
-      : w.crystals[side] > 500 && hasWorkshop ? (Math.random() < 0.5 ? 'catapult' : 'champion')
-      : w.crystals[side] > 300 && hasSmithy ? (Math.random() < 0.5 ? 'knight' : 'pikeman')
-      : w.crystals[side] > 260 ? 'heavy'
-      : w.crystals[side] > 90 ? 'archer'
-      : 'infantry';
-    if (w.crystals[side] >= UNIT_DEFS[t].cost) issueCommand(w, { type: 'train', side, unit: t });
-  }
-
-  // 家园/矿线遇袭 → 全军回防拦截。这是普通玩家听到告警后的本能反应；
-  // 大图上不防守的玩家会被 AI 的经济袭扰活活磨死。
-  const army = w.units.filter(u => u.side === side && !u.dead);
-  const idle = army.filter(u => u.order.kind === 'idle');
-  const pop = army.reduce((n, u) => n + UNIT_DEFS[u.type].pop, 0);
-  const raiders = w.units.filter(u => u.side !== side && !u.dead &&
-    myB.some(b => Math.hypot(u.x - b.x, u.y - b.y) < 420));
-  if (raiders.length && army.length >= 6) {
-    issueCommand(w, { type: 'move', side, ids: army.map(u => u.id), x: raiders[0].x, y: raiders[0].y });
-  } else if (pop >= P_WAVE_POP && idle.length >= 4) {
-    // 出兵：大图上城堡有零距离援军，直冲主基地必被耗死 —— 像人一样先拆最近的
-    // 敌方矿断经济，矿拆光了再推家。攒到接近满编再动身。
-    const foeMines = w.buildings.filter(b => b.side !== side && b.type === 'mine' && !b.dead);
-    const foeHqs = w.buildings.filter(b => b.side !== side && b.type === 'hq' && !b.dead);
-    const targets = foeMines.length ? foeMines : foeHqs;
-    if (targets.length) {
-      let best = targets[0], bd = Infinity;
-      for (const h of targets) {
-        const d = (h.x - hq.x) ** 2 + (h.y - hq.y) ** 2;
-        if (d < bd) { bd = d; best = h; }
-      }
-      issueCommand(w, { type: 'move', side, ids: idle.map(u => u.id), x: best.x, y: best.y });
-    }
-  }
 }
 
 interface Result {

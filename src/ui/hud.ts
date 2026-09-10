@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
+import { BUILDING_DEFS, CROWN_WINDOW, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
 import type { BuildingType, Difficulty, Side, UnitType, World } from '../core/types';
 import type { UIState } from '../input/input';
 import { drawIcon, SIDE_FILL } from '../render/shapes';
@@ -247,13 +247,16 @@ export class Hud {
       this.armySegs[s].style.width = `${total > 0 ? (vals[s] / total * 100) : (100 / world.players)}%`;
     }
 
-    // 王冠之地终局横幅（3 人局 600s 后生效）
+    // 王冠之地终局横幅（3 人局开窗前 30s 预告，开窗后播报占领进度）
     if (world.players > 2 && world.crown.side !== null && world.crown.t > 0) {
       const mine = world.crown.side === 0;
       this.els.goal.textContent = mine
         ? `⚜ 王冠之地占领中 ${Math.ceil(45 - world.crown.t)}s —— 守住！`
         : `⚠ 敌方占领王冠之地 ${Math.ceil(45 - world.crown.t)}s —— 快去阻止！`;
       this.els.goal.style.color = mine ? '#ffe9a8' : '#f87171';
+    } else if (world.players > 2 && world.time >= CROWN_WINDOW - 30 && world.time < CROWN_WINDOW) {
+      this.els.goal.textContent = `⚜ 王冠之地 ${Math.ceil(CROWN_WINDOW - world.time)}s 后开启 —— 驻军质心即胜`;
+      this.els.goal.style.color = '#ffe9a8';
     } else {
       this.els.goal.textContent = this.goalText(world);
       this.els.goal.style.color = '';

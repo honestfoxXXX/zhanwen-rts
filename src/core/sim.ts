@@ -1,4 +1,5 @@
 import {
+  CROWN_WINDOW,
   BUILDING_DEFS, CIVS, COLS, DIFFICULTY, MAP_H, MAPS, MAP_W,
   ROWS, START_CRYSTAL, TILE, UNIT_DEFS,
 } from './config';
@@ -1036,8 +1037,8 @@ export function stepWorld(w: World, dt: number): void {
     }
   }
 
-  // 王冠之地终局（3 人局）：600 秒后，质心 350 内唯一驻军（≥12 人口）持续 45 秒即胜
-  if (w.players === 3 && w.time >= 600 && w.tick % 15 === 0) {
+  // 王冠之地终局（3 人局）：开窗后，质心 350 内唯一驻军（≥12 人口）持续 45 秒即胜
+  if (w.players === 3 && w.time >= CROWN_WINDOW && w.tick % 15 === 0) {
     const cx = MAP_W / 2, cy = MAP_H / 2;
     const popIn = new Array(w.players).fill(0);
     for (const u of w.units) {

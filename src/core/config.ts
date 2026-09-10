@@ -6,6 +6,11 @@ export const ROWS = 96;
 export const MAP_W = COLS * TILE; // 3840 方形大图
 export const MAP_H = ROWS * TILE;
 export const POP_CAP = 80;
+
+/** 王冠之地开窗时刻（三人局）：此后质心驻军判定开始计时。
+ * 数据校准：AI 互殴 5-6 分钟就分出胜负，赢家满编滚雪球不可逆——
+ * 窗口必须赶在雪球收尾前打开，把终局收敛成一场三方都能参与的质心决战 */
+export const CROWN_WINDOW = 360;
 export const START_CRYSTAL = 150;
 
 /**

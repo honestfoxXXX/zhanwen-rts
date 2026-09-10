@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, CIVS, DIFFICULTY, MAP_H, MAP_W, POP_CAP, UNIT_DEFS } from './config';
+import { BUILDING_DEFS, CIVS, DIFFICULTY, CROWN_WINDOW, MAP_H, MAP_W, POP_CAP, UNIT_DEFS } from './config';
 import { canPlace, civOf, findBuildSlot, issueCommand, popCapOf, pushEvent } from './sim';
 import { rngNext } from './rng';
 import type { Building, CivId, CrystalNode, Side, Unit, UnitType, Vec, World } from './types';
@@ -272,9 +272,14 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     st.attacking = true;
     st.waveStart = armyHp;
     st.waveAt = w.time;
-    st.goal = p.raidMode
-      ? pickGoal(w, side, hq, 1, true) // 掠夺模式：只袭击矿场
-      : pickGoal(w, side, hq, st.waves);
+    // 王冠终局（三人局）：临近开窗就向质心进军——谁先在场谁计时，
+    // 拖到后期被滚雪球的赢家平推不如抢终局。行军时间留 ~25s 提前量。
+    const contest = w.players === 3 && w.time >= CROWN_WINDOW - 40;
+    st.goal = contest
+      ? { x: MAP_W / 2, y: MAP_H / 2 }
+      : p.raidMode
+        ? pickGoal(w, side, hq, 1, true) // 掠夺模式：只袭击矿场
+        : pickGoal(w, side, hq, st.waves);
     st.waves++;
     orderArmy(w, side, army, st.goal.x, st.goal.y);
     pushEvent(w, { type: 'wave' }); // 敌袭预警
