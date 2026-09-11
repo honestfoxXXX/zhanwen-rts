@@ -1,8 +1,9 @@
 import {
   BUILDING_DEFS, COLS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
+import { CROWN_WINDOW } from '../core/config';
 import type { MapDef } from '../core/config';
-import type { Building, Unit, UnitType, World } from '../core/types';
+import type { Building, CivId, Unit, UnitType, World } from '../core/types';
 import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
 import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SHAPES } from './shapes';
@@ -317,6 +318,130 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
       g.quadraticCurveTo(mx, my, roadCx, roadCy);
       g.stroke();
     }
+  }
+
+  // ---- M4 密度增强：草茎/野花/草丛簇加倍，战场遗迹散布 ----
+  g.strokeStyle = 'rgba(150,190,100,0.13)';
+  g.lineWidth = 1.4;
+  for (let i = 0; i < 620; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const lean = (rnd() - 0.5) * 3;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(x + lean, y - 3.5, x + lean * 1.6, y - 6);
+    g.stroke();
+  }
+  for (let i = 0; i < 240; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const poppy = i % 6 === 0;
+    g.fillStyle = poppy
+      ? `rgba(214,80,80,${0.25 + rnd() * 0.15})`
+      : `rgba(238,232,200,${0.25 + rnd() * 0.18})`;
+    g.beginPath();
+    g.arc(x, y, poppy ? 1.2 + rnd() * 0.9 : 0.9 + rnd() * 0.9, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 500; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const clump = 2 + Math.floor(rnd() * 3);
+    const hue = rnd() < 0.7 ? 'rgba(110,160,70,' : 'rgba(90,130,55,';
+    for (let b = 0; b < clump; b++) {
+      const bx = x + (rnd() - 0.5) * 12, by = y + (rnd() - 0.5) * 8;
+      const bh = 3 + rnd() * 4;
+      g.strokeStyle = hue + (0.15 + rnd() * 0.15) + ')';
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.moveTo(bx, by);
+      g.lineTo(bx + (rnd() - 0.5) * 2, by - bh);
+      g.stroke();
+    }
+  }
+  // 战场遗迹：断矛 + 半埋圆盾，讲"这里打过仗"
+  for (let i = 0; i < 12; i++) {
+    const x = rnd() * MAP_W, y = rnd() * MAP_H;
+    const a = rnd() * Math.PI;
+    // 断矛
+    g.strokeStyle = 'rgba(107,74,42,0.55)';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9);
+    g.stroke();
+    g.fillStyle = 'rgba(200,208,220,0.5)';
+    g.beginPath();
+    g.moveTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9);
+    g.lineTo(x + Math.cos(a) * 12 + 1.5, y + Math.sin(a) * 12 + 1.5);
+    g.lineTo(x + Math.cos(a) * 11 + 2.5, y + Math.sin(a) * 11 + 1);
+    g.closePath();
+    g.fill();
+    // 半埋圆盾
+    g.fillStyle = 'rgba(91,110,140,0.4)';
+    g.beginPath();
+    g.arc(x + 12, y + 3, 4.2, Math.PI, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(60,48,30,0.3)';
+    g.beginPath();
+    g.ellipse(x + 12, y + 4, 4.6, 1.6, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  // 芦苇：河流两岸的湿生植物（用河流采样，隔 4 取 1）
+  {
+    g.lineWidth = 1;
+    for (let i = 0; i < riverSamples.length; i += 4) {
+      const p = riverSamples[i];
+      const nx = Math.cos(p.a + Math.PI / 2), ny = Math.sin(p.a + Math.PI / 2);
+      for (const sideSign of [-1, 1]) {
+        if (rnd() < 0.4) continue;
+        const bx = p.x + nx * sideSign * 26, by = p.y + ny * sideSign * 26;
+        for (let b = 0; b < 3; b++) {
+          const bx2 = bx + (rnd() - 0.5) * 6, by2 = by + (rnd() - 0.5) * 4;
+          g.strokeStyle = `rgba(122,140,70,${0.3 + rnd() * 0.2})`;
+          g.beginPath();
+          g.moveTo(bx2, by2);
+          g.lineTo(bx2 + (rnd() - 0.5) * 2, by2 - 6 - rnd() * 4);
+          g.stroke();
+        }
+      }
+    }
+  }
+  // 王冠之地祭坛（三人局质心）：石台 + 四方碑 + 金座，给终局一个地标
+  if (map.players === 3) {
+    const ax = roadCx, ay = roadCy;
+    g.fillStyle = 'rgba(0,0,0,0.2)';
+    g.beginPath();
+    g.ellipse(ax, ay + 6, 92, 62, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#6f6a5e';
+    g.beginPath();
+    g.ellipse(ax, ay, 88, 60, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#7d786c';
+    g.beginPath();
+    g.ellipse(ax, ay - 4, 74, 48, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(40,34,24,0.35)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.ellipse(ax, ay - 4, 74, 48, 0, 0, Math.PI * 2);
+    g.stroke();
+    // 四方碑
+    for (const [dx, dy] of [[-52, -30], [52, -30], [-52, 30], [52, 30]] as const) {
+      g.fillStyle = '#8a857a';
+      g.fillRect(ax + dx - 5, ay + dy - 26, 10, 30);
+      g.fillStyle = 'rgba(30,24,16,0.25)';
+      g.fillRect(ax + dx + 1, ay + dy - 26, 4, 30);
+      g.fillStyle = '#b5afa0';
+      g.fillRect(ax + dx - 6, ay + dy - 29, 12, 4);
+    }
+    // 中央金座
+    g.fillStyle = '#d9b44a';
+    g.beginPath();
+    g.arc(ax, ay - 2, 9, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#ffe9a8';
+    g.beginPath();
+    g.arc(ax - 2, ay - 4, 2.6, 0, Math.PI * 2);
+    g.fill();
   }
 
   // ---- 树丛：边缘林带 + 野地树簇（纯装饰；避开要道/河流/出生/矿/岩石/质心）----
@@ -717,6 +842,45 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     sctx.restore();
   }
 
+  // 王冠之地终局动态（三人局）：临近开窗点亮金柱，占领后画占领方色环
+  if (w.players === 3) {
+    const cx = MAP_W / 2, cy = MAP_H / 2;
+    const opening = w.time >= CROWN_WINDOW - 30;
+    const held = w.crown.side !== null && w.crown.t > 0;
+    if (opening || held) {
+      sctx.save();
+      sctx.translate(cx, cy);
+      // 金色光柱：从祭坛中心升起的脉动光束
+      if (opening) {
+        const pulse = 0.5 + 0.5 * Math.sin(w.time * 2.4);
+        const beam = sctx.createLinearGradient(0, -160, 0, 40);
+        beam.addColorStop(0, 'rgba(255,233,168,0)');
+        beam.addColorStop(1, `rgba(255,220,120,${0.3 + pulse * 0.25})`);
+        sctx.fillStyle = beam;
+        sctx.fillRect(-14, -160, 28, 200);
+        sctx.strokeStyle = `rgba(255,220,120,${0.4 + pulse * 0.3})`;
+        sctx.lineWidth = 2;
+        sctx.beginPath();
+        sctx.arc(0, 0, 40 + pulse * 8, 0, Math.PI * 2);
+        sctx.stroke();
+      }
+      // 占领环：谁在计时，350 范围就是谁的
+      if (held) {
+        const col = SIDE_FILL[w.crown.side ?? 0];
+        sctx.setLineDash([16, 10]);
+        sctx.lineDashOffset = -w.time * 30;
+        sctx.strokeStyle = col;
+        sctx.globalAlpha = 0.5 + 0.2 * Math.sin(w.time * 4);
+        sctx.lineWidth = 3;
+        sctx.beginPath();
+        sctx.arc(0, 0, 350, 0, Math.PI * 2);
+        sctx.stroke();
+        sctx.setLineDash([]);
+      }
+      sctx.restore();
+    }
+  }
+
   // 集结点（玩家）
   const r0 = w.rally[0];
   sctx.save();
@@ -797,7 +961,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
 
   // 建筑（按 y 排序）
   const buildings = [...w.buildings].sort((a, b) => a.y - b.y);
-  for (const b of buildings) drawBuilding(sctx, b, w.time);
+  for (const b of buildings) drawBuilding(sctx, b, w.time, w.civs[b.side]);
 
   // 单位（按 y 排序）
   const sel = new Set(ui.selection);
@@ -911,7 +1075,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       cam.cssW / 2, cam.cssH / 2, Math.max(cam.cssW, cam.cssH) * 0.72,
     );
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.30)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.22)');
     vig = grad;
   }
   if (vig) {
@@ -1143,6 +1307,7 @@ function paintBuildingStatic(
   side: Side,
   h: number,
   dmg: number,
+  civ: CivId = 'central',
 ): void {
   // 底板 + 阵营描边
   g.fillStyle = SIDE_DIM[side];
@@ -1244,6 +1409,42 @@ function paintBuildingStatic(
       g.moveTo(16.5, -13);
       g.lineTo(16.5, -27);
       g.stroke();
+      // 文明徽记：中原金脊红幡 / 骑士团门楣盾徽 / 游牧门侧双翎
+      if (civ === 'central') {
+        g.fillStyle = '#d9b44a';
+        g.fillRect(-14, -12.4, 28, 1.8); // 金色檐脊
+        g.fillStyle = '#c0392b';
+        g.fillRect(-1.2, -21, 2.4, 8);   // 旗杆红幡
+        g.beginPath();
+        g.moveTo(1.2, -21); g.lineTo(7, -19); g.lineTo(1.2, -17);
+        g.closePath(); g.fill();
+      } else if (civ === 'knight') {
+        // 门楣上方小盾徽 + 十字
+        g.fillStyle = SIDE[side];
+        g.beginPath();
+        g.moveTo(-3.4, -2);
+        g.lineTo(3.4, -2);
+        g.lineTo(3.4, 1.6);
+        g.quadraticCurveTo(3.4, 4.4, 0, 5.6);
+        g.quadraticCurveTo(-3.4, 4.4, -3.4, 1.6);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = '#f5ecd2';
+        g.lineWidth = 1.1;
+        g.beginPath();
+        g.moveTo(0, -1); g.lineTo(0, 4); g.moveTo(-2, 0.8); g.lineTo(2, 0.8);
+        g.stroke();
+      } else {
+        // 门侧双翎翎羽
+        g.strokeStyle = '#e8e2c4';
+        g.lineWidth = 1.2;
+        for (const [fx, fa] of [[-6.5, -0.5], [-4.5, -0.9]] as const) {
+          g.beginPath();
+          g.moveTo(fx, 6);
+          g.quadraticCurveTo(fx - 3, 2, fx + Math.cos(fa) * 4, 6 + Math.sin(fa) * 7 - 7);
+          g.stroke();
+        }
+      }
       break;
     }
     case 'mine': {
@@ -1295,6 +1496,19 @@ function paintBuildingStatic(
         g.beginPath();
         g.arc(gx, gy, 1, 0, Math.PI * 2);
         g.fill();
+      }
+      if (civ === 'knight') {
+        // 骑士团金矿护栅：半圈尖桩栅栏
+        g.strokeStyle = '#8a6f42';
+        g.lineWidth = 2;
+        for (let i = 0; i < 7; i++) {
+          const a = Math.PI * (0.15 + (i / 6) * 0.7);
+          const px = Math.cos(a) * 17, py = 8 + Math.sin(a) * 11;
+          g.beginPath();
+          g.moveTo(px, py);
+          g.lineTo(px * 1.12, py - 4.5);
+          g.stroke();
+        }
       }
       break;
     }
@@ -1389,6 +1603,55 @@ function paintBuildingStatic(
       g.moveTo(-h + 8, -h + 22);
       g.lineTo(-h + 8, -h + 6);
       g.stroke();
+      // 文明差异：游牧圆顶毡帐 / 中原红柱 / 骑士团帐面十字
+      if (civ === 'nomad') {
+        // 毡帐穹顶盖过三角帐面
+        g.fillStyle = SIDE[side];
+        g.beginPath();
+        g.moveTo(-17, 12);
+        g.quadraticCurveTo(-17, -15, 0, -15);
+        g.quadraticCurveTo(17, -15, 17, 12);
+        g.closePath();
+        g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.2)';
+        g.beginPath();
+        g.moveTo(0, -15);
+        g.quadraticCurveTo(17, -15, 17, 12);
+        g.lineTo(5, 12);
+        g.closePath();
+        g.fill();
+        // 帐内花纹带 + 顶口
+        g.strokeStyle = 'rgba(245,236,210,0.5)';
+        g.lineWidth = 1.4;
+        g.beginPath();
+        g.moveTo(-15.4, 3);
+        g.quadraticCurveTo(0, 8.5, 15.4, 3);
+        g.stroke();
+        g.fillStyle = '#6b4a2a';
+        g.beginPath();
+        g.arc(0, -15, 2.4, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = 'rgba(20,14,8,0.6)';
+        g.beginPath();
+        g.moveTo(0, -4);
+        g.lineTo(-4.5, 12);
+        g.lineTo(4.5, 12);
+        g.closePath();
+        g.fill();
+      } else if (civ === 'central') {
+        g.strokeStyle = '#c0392b';
+        g.lineWidth = 2.2;
+        g.beginPath();
+        g.moveTo(0, -13);
+        g.lineTo(0, 12);
+        g.stroke();
+      } else {
+        g.strokeStyle = '#f5ecd2';
+        g.lineWidth = 1.4;
+        g.beginPath();
+        g.moveTo(0, -9); g.lineTo(0, -3); g.moveTo(-2.4, -7); g.lineTo(2.4, -7);
+        g.stroke();
+      }
       break;
     }
     case 'tower': {
@@ -1423,6 +1686,41 @@ function paintBuildingStatic(
       g.moveTo(0, 6);
       g.lineTo(0, 13);
       g.stroke();
+      // 文明塔顶：中原翘檐红门 / 骑士团十字 / 游牧翎旗
+      if (civ === 'central') {
+        g.fillStyle = '#c0392b';
+        g.fillRect(-2.2, 6, 4.4, 7); // 红门
+        g.strokeStyle = '#b5afa0';
+        g.lineWidth = 1.6;
+        g.beginPath();
+        g.moveTo(-9.5, -12);
+        g.quadraticCurveTo(-11.5, -15.5, -14.5, -16.5);
+        g.moveTo(9.5, -12);
+        g.quadraticCurveTo(11.5, -15.5, 14.5, -16.5);
+        g.stroke();
+        g.fillStyle = '#d9b44a';
+        g.beginPath();
+        g.arc(0, -14.5, 1.6, 0, Math.PI * 2);
+        g.fill();
+      } else if (civ === 'knight') {
+        g.fillStyle = '#f5ecd2';
+        g.fillRect(-0.8, -20, 1.6, 7);
+        g.fillRect(-2.6, -18.2, 5.2, 1.6);
+      } else {
+        g.strokeStyle = SIDE_DARK[side];
+        g.lineWidth = 1.6;
+        g.beginPath();
+        g.moveTo(0, -12);
+        g.lineTo(0, -21);
+        g.stroke();
+        g.fillStyle = SIDE_FILL[side];
+        g.beginPath();
+        g.moveTo(0, -21);
+        g.quadraticCurveTo(6, -20, 9, -17.5);
+        g.lineTo(0, -16);
+        g.closePath();
+        g.fill();
+      }
       break;
     }
     case 'smithy': {
@@ -1692,7 +1990,7 @@ function drawBuildingDynamic(
   }
 }
 
-function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number): void {
+function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number, civ: CivId): void {
   const h = b.half * 1.18; // 视觉放大：建筑在屏幕上更有体积感（碰撞仍用 sim half）
   const constructing = b.buildT > 0;
   ctx.save();
@@ -1734,9 +2032,9 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
     // 静态主体走精灵缓存（含损伤档）；动态层（旗/焰/环/炮管/冒烟）实时绘制
     const dmg = b.hp < b.maxHp * 0.33 ? 2 : b.hp < b.maxHp * 0.66 ? 1 : 0;
     const S = h + 14;
-    const sprite = getSprite(`bld:${b.type}:${b.side}:${dmg}`, S * 2, S * 2, g => {
+    const sprite = getSprite(`bld:${civ}:${b.type}:${b.side}:${dmg}`, S * 2, S * 2, g => {
       g.translate(S, S);
-      paintBuildingStatic(g, b.type, b.side, h, dmg);
+      paintBuildingStatic(g, b.type, b.side, h, dmg, civ);
     });
     ctx.drawImage(sprite, -S, -S, S * 2, S * 2);
     const flash = flashOf(b.id);

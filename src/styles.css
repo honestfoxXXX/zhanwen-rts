@@ -324,3 +324,13 @@ button:disabled { opacity: 0.35; cursor: default; }
 #selPanel .grp .hpbar i { display: block; height: 100%; border-radius: 2px; }
 #selPanel .binfo { font-size: 11.5px; color: #efe4c8; line-height: 1.5; padding: 3px 6px; }
 #selPanel .binfo b { color: #d9b44a; }
+
+/* ---- A5 卡片可购状态：可买金边微光，不可买降饱和 ---- */
+.card:not(:disabled):not(.wide) { border-color: rgba(217, 180, 74, 0.55); }
+.card:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.08); }
+.row:not(.hidden) .card:disabled { filter: saturate(0.45) brightness(0.75); }
+.row:not(.hidden) .card:not(:disabled) { animation: cardGlow 3.2s ease-in-out infinite; }
+@keyframes cardGlow {
+  0%, 100% { border-color: rgba(217, 180, 74, 0.4); }
+  50% { border-color: rgba(217, 180, 74, 0.8); }
+}
