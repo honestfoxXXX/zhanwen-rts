@@ -1,4 +1,7 @@
-import { BUILDING_DEFS, CROWN_WINDOW, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
+import { BUILDING_DEFS, CIVS, CROWN_WINDOW, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
+import { settings, saveSettings } from '../settings';
+import { setDamageNumbers, damageNumbersOn } from '../render/feedback';
+import { setVolumes } from '../sound';
 import type { BuildingType, Difficulty, Side, UnitType, World } from '../core/types';
 import type { UIState } from '../input/input';
 import { drawIcon, SIDE_FILL } from '../render/shapes';
@@ -44,6 +47,7 @@ export interface HudHooks {
   towerUpgrade: () => void;
   mineUpgrade: () => void;
   music: () => string;
+  groupRecall: (n: number) => void;
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -64,7 +68,8 @@ export class Hud {
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
     chain: $('goalChain'), chainHead: $('chainHead'), chainList: $('chainList'), chainToggle: $('chainToggle'),
-    feed: $('feed'), selPanel: $('selPanel'),
+    feed: $('feed'), selPanel: $('selPanel'), groupBar: $('groupBar'),
+    codex: $('codexScr'), codexBody: $('codexBody'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
     tipsMap: $('tipsMap'),
     sound: $('btnSound'),
@@ -95,6 +100,37 @@ export class Hud {
     $('btnFront').addEventListener('click', () => hooks.pickFront());
     $('btnBack').addEventListener('click', () => hooks.pickBack());
     this.els.chainHead.addEventListener('click', () => this.els.chain.classList.toggle('folded'));
+    // 图鉴开关（菜单 + 暂停 + 关闭）
+    for (const id of ['btnCodex', 'btnCodex2']) {
+      const b = document.getElementById(id);
+      if (b) b.addEventListener('click', () => { this.buildCodex(); this.els.codex.classList.remove('hidden'); });
+    }
+    $('btnCodexOk').addEventListener('click', () => this.els.codex.classList.add('hidden'));
+    // 设置面板：加载当前值 + 实时生效 + 持久化
+    const applyVol = () => setVolumes(settings.master, settings.music, settings.sfx);
+    const bindNum = (id: string, key: 'master' | 'music' | 'sfx') => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (!el) return;
+      el.value = String(settings[key]);
+      el.addEventListener('input', () => { settings[key] = Number(el.value); applyVol(); saveSettings(); });
+    };
+    const bindBool = (id: string, key: 'shake' | 'edgeScroll' | 'goalChain') => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      if (!el) return;
+      el.checked = settings[key];
+      el.addEventListener('change', () => { settings[key] = el.checked; saveSettings(); });
+    };
+    bindNum('setMaster', 'master');
+    bindNum('setMusic', 'music');
+    bindNum('setSfx', 'sfx');
+    bindBool('setShake', 'shake');
+    bindBool('setEdge', 'edgeScroll');
+    bindBool('setChain', 'goalChain');
+    const dmgEl = document.getElementById('setDmg') as HTMLInputElement | null;
+    if (dmgEl) {
+      dmgEl.checked = damageNumbersOn();
+      dmgEl.addEventListener('change', () => setDamageNumbers(dmgEl.checked));
+    }
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
     this.els.placeNo.addEventListener('click', () => hooks.placeNo());
     $('btnDesel').addEventListener('click', () => hooks.desel());
@@ -174,8 +210,17 @@ export class Hud {
     this.els.resultTitle.textContent = win ? '胜 利' : draw ? '平 局' : '战 败';
     this.els.resultTitle.className = win ? 'win' : 'lose';
     const m = Math.floor(world.time / 60), s = Math.floor(world.time % 60);
+    // 胜因：王冠占领 / 武力征服 / 超时
+    let reason = '';
+    if (world.players > 2 && world.crown.t >= 45 && winner !== null) {
+      reason = winner === 0 ? ' · ⚜ 王冠之地占领成功' : ' · 敌方占领王冠之地';
+    } else if (winner !== null) {
+      reason = winner === 0 ? ' · 扫平全部敌方城堡' : ' · 城堡陷落';
+    } else {
+      reason = ' · 超时平局';
+    }
     this.els.resultStats.textContent =
-      `用时 ${m}:${String(s).padStart(2, '0')} · 难度 ${DIFFICULTY[world.difficulty].label}`;
+      `用时 ${m}:${String(s).padStart(2, '0')} · 难度 ${DIFFICULTY[world.difficulty].label}${reason}`;
 
     // 战报：给玩家一个"再来一局"的理由 —— 看得出这局输在哪
     const st = world.stats;
@@ -347,6 +392,65 @@ export class Hud {
     this.selPanelKey = '';
   }
 
+  /* ---- B2 编队栏：5 槽，显示存活数，点击召回 ---- */
+  private groupKey = '';
+  renderGroups(counts: number[]): void {
+    const key = counts.join(',');
+    if (key === this.groupKey) return;
+    this.groupKey = key;
+    const bar = this.els.groupBar;
+    bar.textContent = '';
+    counts.forEach((n, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'gslot' + (n > 0 ? '' : ' empty');
+      slot.innerHTML = `<b>${i + 1}</b><small>${n > 0 ? n + ' 支' : '空'}</small>`;
+      slot.title = '点击召回（Ctrl+数字 编队 / 双击跳转）';
+      if (n > 0) slot.addEventListener('click', () => this.hooks.groupRecall(i));
+      bar.appendChild(slot);
+    });
+  }
+
+  /* ---- C3 兵种图鉴：全部由 config 数值生成，杜绝两份数据 ---- */
+  private codexBuilt = false;
+  buildCodex(): void {
+    if (this.codexBuilt) return;
+    this.codexBuilt = true;
+    const body = this.els.codexBody;
+    body.textContent = '';
+    const tiers: Record<number, string> = { 1: '一本', 2: '二本（军械库）', 3: '三本（攻城工坊）' };
+    // 兵种表
+    let html = '<h3>兵 种</h3><table><tr><th>兵种</th><th>费用</th><th>人口</th><th>生命</th><th>攻击</th><th>射程</th><th>速度</th><th>克制</th></tr>';
+    for (const [t, d] of Object.entries(UNIT_DEFS)) {
+      const cnt = d.dmgBonus
+        ? Object.entries(d.dmgBonus)
+            .filter(([k]) => k !== 'building')
+            .map(([k, v]) => `${UNIT_NAME[k]}×${v}`)
+            .join(' ')
+        : '';
+      const unlock = d.tier === 2 ? '<br>需军械库' : d.tier === 3 ? '<br>需攻城工坊' : '';
+      html += `<tr><td>${d.name}${unlock}<br><small style="color:#7d715c">${tiers[d.tier]}</small></td>` +
+        `<td>${d.cost}</td><td>${d.pop}</td><td>${d.hp}</td><td>${d.damage}</td><td>${d.range}</td><td>${d.speed}</td>` +
+        `<td class="cnt">${cnt || '—'}</td></tr>`;
+    }
+    html += '</table>';
+    // 建筑表
+    html += '<h3>建 筑</h3><table><tr><th>建筑</th><th>费用</th><th>生命</th><th>说明</th></tr>';
+    for (const [t, d] of Object.entries(BUILDING_DEFS)) {
+      const note = t === 'smithy' ? '解锁二本兵种' : t === 'workshop' ? '解锁三本兵种' : t === 'farm' ? '中原专属经济' : t === 'tower' ? '中原可任意建造并升级' : '—';
+      html += `<tr><td>${d.name}</td><td>${d.cost}</td><td>${d.hp}</td><td>${note}</td></tr>`;
+    }
+    html += '</table>';
+    // 文明差异
+    html += '<h3>文 明</h3><table><tr><th>文明</th><th>人口</th><th>特性</th></tr>';
+    for (const c of Object.values(CIVS)) {
+      html += `<tr><td>${c.name}</td><td>${c.popCap}</td><td>${c.desc}</td></tr>`;
+    }
+    html += '</table>';
+    // 克制三角说明
+    html += '<h3>克 制</h3><p style="color:#d9cdb0">弓手 › 重装 › 步兵 › 弓手 · 长枪克骑士 · 投石车拆建筑（3×）· 近卫军披甲（减伤 28%）</p>';
+    body.innerHTML = html;
+  }
+
   /** 在容器左上角画一枚与战场同源的小图标 */
   private paintIconAt(host: HTMLElement, kind: 'unit' | 'building', type: UnitType | BuildingType): void {
     const cv = document.createElement('canvas');
@@ -385,7 +489,8 @@ export class Hud {
     }
 
     if (++this.frame % 4 !== 0) return;
-    this.updateGoalChain(world);
+    this.els.chain.classList.toggle('hidden', !settings.goalChain);
+    if (settings.goalChain) this.updateGoalChain(world);
     this.updateSelPanel(world, ui);
     const cr = Math.floor(world.crystals[0]);
     this.els.crystal.textContent = String(cr);

@@ -2,6 +2,7 @@ import {
   BUILDING_DEFS, COLS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
 import { CROWN_WINDOW } from '../core/config';
+import type { DenyReason } from '../core/types';
 import type { MapDef } from '../core/config';
 import type { Building, CivId, Unit, UnitType, World } from '../core/types';
 import type { Camera } from './camera';
@@ -29,7 +30,14 @@ const C = {
   ghostBadEdge: 'rgba(214,69,69,0.9)',
 };
 
-export type GhostInfo = { type: Building['type']; x: number; y: number; valid: boolean } | null
+const GHOST_REASON: Record<string, string> = {
+  nonode: '要建在空闲金矿脉上',
+  place: '建造区外 / 地形阻挡',
+  cost: '黄金不足',
+  pop: '人口已满',
+};
+
+export type GhostInfo = { type: Building['type']; x: number; y: number; valid: boolean; reason?: string } | null
 
 let bgCanvas: HTMLCanvasElement | null = null;
 // 后处理管线：游戏渲染到离屏 → 后处理 → 屏幕
@@ -1058,6 +1066,11 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     sctx.font = '600 12px sans-serif';
     sctx.textAlign = 'center';
     sctx.fillText(BUILDING_DEFS[gh.type].name, gh.x, gh.y + 4);
+    if (!gh.valid && gh.reason) {
+      sctx.font = '500 10.5px sans-serif';
+      sctx.fillStyle = '#f8b4b4';
+      sctx.fillText(GHOST_REASON[gh.reason] ?? '无法在此建造', gh.x, gh.y + 20);
+    }
     sctx.globalAlpha = 1;
   }
   fxList.draw(sctx);

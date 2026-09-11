@@ -1,9 +1,10 @@
-import { BUILDING_DEFS, MAP_H, MAP_W } from '../core/config';
+import { BUILDING_DEFS, MAP_H, MAP_W, TILE } from '../core/config';
 import { canPlace, pickBuildingAt, pickUnitAt, unitsInRect } from '../core/sim';
 import type { BuildingType, Command, World } from '../core/types';
 import type { Camera } from '../render/camera';
 import type { GhostInfo } from '../render/renderer';
 import { isInsideMinimap, jumpCameraTo } from '../render/minimap';
+import { settings } from '../settings';
 
 export type UIMode = 'none' | 'place' | 'rally' | 'box';
 
@@ -79,8 +80,8 @@ export class Input {
     if (this.keys.has('ArrowUp')) dy -= 1;
     if (this.keys.has('ArrowDown')) dy += 1;
     if (dx !== 0 || dy !== 0) this.cam.pan(dx * speed * dt, dy * speed * dt);
-    // 鼠标边缘滚动：桌面端把鼠标推向画面边缘即可平移（触屏无此行为）
-    if (this.hover) {
+    // 鼠标边缘滚动：桌面端把鼠标推向画面边缘即可平移（触屏无此行为；设置可关）
+    if (this.hover && settings.edgeScroll) {
       const m = 22;
       const sp = 520 * dt;
       let ex = 0, ey = 0;
@@ -203,6 +204,16 @@ export class Input {
       return;
     }
 
+    // 中原箭塔「Shift+拖动」画线筑塔：拖过一段距离后沿线布置
+    if (this.ui.mode === 'place' && this.ui.placing && rec.moved && rec.shift && rec.pointerType === 'mouse') {
+      const from = this.cam.screenToWorld(rec.sx, rec.sy);
+      const to = this.cam.screenToWorld(p.x, p.y);
+      if (Math.hypot(to.x - from.x, to.y - from.y) > TILE) {
+        this.confirmPlace(true, from, to);
+        return;
+      }
+    }
+
     if (this.ui.mode === 'box' && this.ui.boxRect) {
       const a = this.cam.screenToWorld(Math.min(rec.sx, p.x), Math.min(rec.sy, p.y));
       const b = this.cam.screenToWorld(Math.max(rec.sx, p.x), Math.max(rec.sy, p.y));
@@ -242,7 +253,7 @@ export class Input {
     if (!world || !this.ui.placing) return;
     const wp = this.cam.screenToWorld(sx, sy);
     const r = canPlace(world, 0, this.ui.placing, wp.x, wp.y);
-    this.ui.ghost = { type: this.ui.placing, x: r.x, y: r.y, valid: r.ok };
+    this.ui.ghost = { type: this.ui.placing, x: r.x, y: r.y, valid: r.ok, reason: r.ok ? undefined : r.reason };
   }
 
   /** 更新幽灵有效性（每帧，价格变化等场景） */
@@ -252,6 +263,7 @@ export class Input {
       if (world) {
         const r = canPlace(world, 0, this.ui.ghost.type, this.ui.ghost.x, this.ui.ghost.y);
         this.ui.ghost.valid = r.ok;
+        this.ui.ghost.reason = r.ok ? undefined : r.reason;
       }
     }
   }
@@ -262,7 +274,7 @@ export class Input {
     // 放置模式
     if (this.ui.mode === 'place' && this.ui.placing) {
       if (pointerType === 'mouse' && !rightClick) {
-        this.confirmPlace();
+        this.confirmPlace(shift);
       } else if (pointerType !== 'mouse') {
         this.moveGhost(sx, sy); // 触屏：先挪位置，按 ✓ 确认
       }
@@ -369,17 +381,43 @@ export class Input {
       : { type: 'move', side: 0, ids: [...this.ui.selection], x: wx, y: wy });
   }
 
-  /** HUD 调用：确认建造 */
-  confirmPlace(): void {
+  /**
+   * 确认建造。shift=true 连续放置：成功后保持放置模式继续造（钱不够自动退出）。
+   * 中原箭塔可用「Shift+拖动」沿拖痕每 2 格下一个塔位（城墙阵核心操作）。
+   */
+  confirmPlace(shift = false, dragFrom?: { x: number; y: number }, dragTo?: { x: number; y: number }): void {
     const world = this.getWorld();
-    if (!world || !this.ui.placing || !this.ui.ghost) return;
+    if (!world || !this.ui.placing) return;
+    // 城墙拖线：中原箭塔 + 起点/终点都有 → 沿线逐格下单
+    if (dragFrom && dragTo && this.ui.placing === 'tower' && world.civs[0] === 'central') {
+      const dx = dragTo.x - dragFrom.x, dy = dragTo.y - dragFrom.y;
+      const len = Math.hypot(dx, dy);
+      const steps = Math.max(1, Math.round(len / (TILE * 2)));
+      let placed = 0;
+      for (let i = 0; i <= steps; i++) {
+        const wx = dragFrom.x + (dx * i) / steps;
+        const wy = dragFrom.y + (dy * i) / steps;
+        const p = canPlace(world, 0, 'tower', wx, wy);
+        if (p.ok && world.crystals[0] >= BUILDING_DEFS.tower.cost) {
+          if (this.hooks.command({ type: 'build', side: 0, building: 'tower', x: p.x, y: p.y })) placed++;
+        }
+      }
+      this.hooks.toast(placed > 0 ? `沿线路筑起 ${placed} 座箭塔` : '沿线没有可建塔位');
+      this.cancelMode();
+      return;
+    }
     const g = this.ui.ghost;
+    if (!g) return;
     if (!g.valid) {
       this.hooks.toast('无法在此建造');
       return;
     }
     const ok = this.hooks.command({ type: 'build', side: 0, building: g.type, x: g.x, y: g.y });
-    if (ok) this.ui.mode = 'none';
+    if (ok && shift) {
+      this.moveGhost(g.x, g.y); // 保持放置模式，幽灵停在原地微调
+    } else if (ok || !shift) {
+      this.cancelMode();
+    }
   }
 
   cancelMode(): void {

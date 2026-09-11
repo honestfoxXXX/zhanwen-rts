@@ -10,8 +10,11 @@
  */
 
 let ac: AudioContext | null = null;
+import { settings } from './settings';
+
 let master: GainNode | null = null;
 let sfxBus: GainNode | null = null; // 所有音效挂此：干声进 master，湿声进混响
+let musicBus: GainNode | null = null; // 音乐独立音轨（pluck/drum），音量独立可调
 let noiseBuf: AudioBuffer | null = null;
 let muted = false;
 let musicOn = true;
@@ -30,7 +33,7 @@ export function initAudio(): void {
     if (Ctx) {
       ac = new Ctx();
       master = ac.createGain();
-      master.gain.value = 0.85;
+      master.gain.value = settings.master;
       // 压限器：混战时几十个声音叠在一起也不爆音
       const comp = ac.createDynamicsCompressor();
       comp.threshold.value = -16;
@@ -42,8 +45,11 @@ export function initAudio(): void {
       comp.connect(ac.destination);
       // 音效总线：干声直进 master，湿声进卷积混响
       sfxBus = ac.createGain();
-      sfxBus.gain.value = 1;
+      sfxBus.gain.value = settings.sfx;
       sfxBus.connect(master);
+      musicBus = ac.createGain();
+      musicBus.gain.value = settings.music;
+      musicBus.connect(master);
       const conv = ac.createConvolver();
       conv.buffer = makeImpulse(1.5, 2.3);
       const wet = ac.createGain();
@@ -76,6 +82,13 @@ function makeImpulse(seconds: number, decay: number): AudioBuffer {
 }
 
 export function isMuted(): boolean { return muted; }
+
+/** 设置面板三轨音量：主/音乐/音效（0-1），实时生效 */
+export function setVolumes(masterV: number, musicV: number, sfxV: number): void {
+  if (master) master.gain.value = masterV;
+  if (musicBus) musicBus.gain.value = musicV;
+  if (sfxBus) sfxBus.gain.value = sfxV;
+}
 
 export function toggleMute(): string {
   muted = !muted;
@@ -175,13 +188,15 @@ function pluck(freq: number, vol: number, when: number): void {
   const g = ac.createGain();
   g.gain.setValueAtTime(vol, when);
   g.gain.exponentialRampToValueAtTime(0.0001, when + 0.7);
-  src.connect(bp); bp.connect(g); g.connect(sfxBus);
+  src.connect(bp); bp.connect(g); g.connect(musicBus ?? sfxBus);
   src.start(when); src.stop(when + 0.72);
 }
 
 /** 低频战鼓 */
 function drum(when: number, vol: number): void {
-  if (!ac || !sfxBus) return;
+  if (!ac || !(musicBus ?? sfxBus)) return;
+  const dest = musicBus ?? sfxBus;
+  if (!dest) return;
   const o = ac.createOscillator();
   const g = ac.createGain();
   o.type = 'sine';
@@ -189,7 +204,7 @@ function drum(when: number, vol: number): void {
   o.frequency.exponentialRampToValueAtTime(48, when + 0.16);
   g.gain.setValueAtTime(vol, when);
   g.gain.exponentialRampToValueAtTime(0.0001, when + 0.22);
-  o.connect(g); g.connect(sfxBus);
+  o.connect(g); g.connect(dest);
   o.start(when); o.stop(when + 0.24);
 }
 

@@ -11,6 +11,7 @@ import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
 import { initAudio, isMuted, play, setBattleIntensity, toggleMute, toggleMusic } from './sound';
 import { notifyHit, tickFlash, damageNumbersOn } from './render/feedback';
+import { settings } from './settings';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const frame = document.getElementById('frame') as HTMLDivElement;
@@ -123,6 +124,7 @@ const hud = new Hud({
     hud.toast(ok ? '金矿升级中 —— 更厚更硬' : '已达最高等级或黄金不足');
     play('ui');
   },
+  groupRecall: (n: number) => recallGroup(n),
   hold: () => {
     if (!world || state !== 'play' || !ui.selection.length) return;
     issueCommand(world, { type: 'hold', side: 0, ids: [...ui.selection] });
@@ -216,6 +218,7 @@ let shakeAmp = 0;
 let shakeY = 0;
 
 function shake(amp: number, dur: number): void {
+  if (!settings.shake) return; // 设置面板可关
   shakeAmp = Math.max(shakeAmp, amp);
   shakeDur = Math.max(shakeDur, dur);
   shakeT = Math.max(shakeT, dur);
@@ -465,6 +468,7 @@ function renderFrame(): void {
     drawAlertGlow(ctx);
     if (shakeY) cam.y = camY0;
     hud.update(world, ui, modeLabel);
+    hud.renderGroups(groups.map(g => g.filter(id => world!.units.some(v => v.id === id && !v.dead)).length));
     rallyBtn.classList.toggle('armed', ui.mode === 'rally');
     for (const [t, btn] of buildBtns) btn.classList.toggle('armed', ui.mode === 'place' && ui.placing === t);
   } else {
@@ -515,6 +519,28 @@ document.addEventListener('visibilitychange', () => {
 //   Q/E/R/T/Y/B 建造 · 1-7 出兵（按卡槽可见顺序） · F 全选 · G 集结
 //   U 升级箭塔 · I 升级金矿 · H 固守 · X 撤退 · Esc 取消
 //   A+左键 攻击移动 · Shift+右键/双指轻点 强制移动
+/* ---- B2 编队：Ctrl+1..5 编队，1..5 召回（双击跳质心），空槽回落出兵热键 ---- */
+const groups: number[][] = [[], [], [], [], []];
+let lastGroupKey = '';
+let lastGroupT = 0;
+
+function recallGroup(n: number): void {
+  if (!world || state !== 'play') return;
+  groups[n] = groups[n].filter(id => {
+    const u = world!.units.find(v => v.id === id);
+    return u && !u.dead;
+  });
+  if (!groups[n].length) return;
+  ui.selection = [...groups[n]];
+  ui.buildingSel = null;
+  let sx = 0, sy = 0;
+  for (const id of groups[n]) {
+    const u = world.units.find(v => v.id === id);
+    if (u) { sx += u.x; sy += u.y; }
+  }
+  void sx; void sy;
+}
+
 const BUILD_KEYS: Record<string, BuildingType> = { q: 'mine', e: 'barracks', r: 'tower', t: 'smithy', y: 'workshop', b: 'farm' };
 window.addEventListener('keydown', e => {
   if (state !== 'play' || !world) return;
@@ -537,6 +563,37 @@ window.addEventListener('keydown', e => {
   if (k === 'c') { cam.centerOn(world.spawns[0].x, world.spawns[0].y); return; }
   if (e.key === 'Tab') { e.preventDefault(); cycleAlert(); return; }
   if (k === 'p') { hud.pause(); return; }
+  if (e.key >= '1' && e.key <= '5') {
+    const n = Number(e.key) - 1;
+    const w0 = world;
+    if (!w0) return;
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      groups[n] = ui.selection.filter(id => w0.units.some(v => v.id === id && !v.dead));
+      if (groups[n].length) hud.feed(`编队 ${n + 1} 已设（${groups[n].length} 支）`, 'info');
+      return;
+    }
+    if (groups[n].length) {
+      const now2 = performance.now();
+      const isDouble = lastGroupKey === e.key && now2 - lastGroupT < 350;
+      lastGroupKey = e.key;
+      lastGroupT = now2;
+      recallGroup(n);
+      if (isDouble && groups[n].length) {
+        // 双击数字：镜头跳到编队质心
+        let sx2 = 0, sy2 = 0;
+        for (const id of groups[n]) {
+          const u2 = world.units.find(v => v.id === id);
+          if (u2) { sx2 += u2.x; sy2 += u2.y; }
+        }
+        cam.centerOn(sx2 / groups[n].length, sy2 / groups[n].length);
+      }
+      return;
+    }
+    // 空编队槽 → 回落为出兵热键
+    hud.trainByHotkey(n);
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const buildT = BUILD_KEYS[k];
   if (buildT) {
