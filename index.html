@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#141009" />
   <title>战纹 · 竖屏 RTS</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='8' y='8' width='16' height='16' rx='3' transform='rotate(45 16 16)' fill='%23dfa53b'/%3E%3C/svg%3E" />
-  <script type="module" crossorigin src="./assets/index-DptED9y1.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DSL4pacd.css">
+  <script type="module" crossorigin src="./assets/index-DNKR6tgh.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DoBxr3Ui.css">
 </head>
 <body>
   <div id="stage">
@@ -27,7 +27,14 @@
         <div id="armyBar" title="各方军力对比"></div>
         <div id="goal"></div>
         <div id="alertBanner" class="hidden"></div>
+        <div id="goalChain">
+          <div id="chainHead">本局目标 <span id="chainToggle">▾</span></div>
+          <ol id="chainList"></ol>
+        </div>
+        <div id="feed"></div>
         <div id="selchip" class="hidden"><span id="selCount">已选 0</span><button id="btnDesel" aria-label="取消选择">✕</button></div>
+        <div id="selPanel" class="hidden"></div>
+        <div id="groupBar"></div>
         <div id="toasts"></div>
         <div id="dock">
           <div class="row hidden" id="placeRow">
@@ -36,35 +43,36 @@
             <button id="btnPlaceOk" class="slim ok">✓ 建造</button>
           </div>
           <div class="row hidden" id="rowTower">
-            <button class="card wide" id="btnTowerUp"><span>⬆ 升级箭塔</span></button>
+            <button class="card wide" id="btnTowerUp"><span>⬆ 升级箭塔</span><kbd>U</kbd></button>
+            <button class="card wide hidden" id="btnMineUp"><span>⬆ 加固金矿</span><kbd>I</kbd></button>
           </div>
           <div class="row hidden" id="rowCommand">
             <button class="card wide" id="btnFront"><span>前排</span></button>
             <button class="card wide" id="btnBack"><span>后排</span></button>
-            <button class="card wide" id="btnHold"><span>固守</span></button>
-            <button class="card wide" id="btnRetreat"><span>撤退</span></button>
+            <button class="card wide" id="btnHold"><span>固守</span><kbd>H</kbd></button>
+            <button class="card wide" id="btnRetreat"><span>撤退</span><kbd>X</kbd></button>
           </div>
           <div class="row" id="rowBuild">
-            <button class="card" data-build="mine"><i>⚜</i><span>金矿</span><em>100</em></button>
-            <button class="card" data-build="barracks"><i>⛺</i><span>军营</span><em>150</em></button>
-            <button class="card" data-build="tower"><i>▲</i><span>箭塔</span><em>120</em></button>
-            <button class="card" data-build="smithy"><i>⚒</i><span>军械库</span><em>400</em></button>
-            <button class="card" data-build="workshop"><i>⚙</i><span>工坊</span><em>900</em></button>
-            <button class="card hidden" data-build="farm" id="btnFarm"><i>▤</i><span>农田</span><em>60</em></button>
+            <button class="card" data-build="mine"><kbd>Q</kbd><i></i><span>金矿</span><em>100</em></button>
+            <button class="card" data-build="barracks"><kbd>E</kbd><i></i><span>军营</span><em>150</em></button>
+            <button class="card" data-build="tower"><kbd>R</kbd><i></i><span>箭塔</span><em>120</em></button>
+            <button class="card" data-build="smithy"><kbd>T</kbd><i></i><span>军械库</span><em>400</em></button>
+            <button class="card" data-build="workshop"><kbd>Y</kbd><i></i><span>工坊</span><em>900</em></button>
+            <button class="card hidden" data-build="farm" id="btnFarm"><kbd>B</kbd><i></i><span>农田</span><em>60</em></button>
           </div>
           <div class="row" id="rowUnit">
-            <button class="card" data-train="infantry"><i>●</i><span>步兵</span><em>50</em></button>
-            <button class="card" data-train="horsearcher" data-civ="nomad" id="btnHorsearcher"><i>◤</i><span>游骑兵</span><em>120</em></button>
-            <button class="card" data-train="archer" data-civ="!nomad" id="btnArcher"><i>◗</i><span>弓手</span><em>80</em></button>
-            <button class="card" data-train="heavy"><i>⬢</i><span>重装</span><em>200</em></button>
-            <button class="card wide" id="btnAll"><span>全选</span></button>
-            <button class="card wide" id="btnRally"><span>集结</span></button>
+            <button class="card" data-train="infantry"><kbd>1</kbd><i></i><span>步兵</span><em>50</em></button>
+            <button class="card" data-train="horsearcher" data-civ="nomad" id="btnHorsearcher"><kbd>2</kbd><i></i><span>游骑兵</span><em>120</em></button>
+            <button class="card" data-train="archer" data-civ="!nomad" id="btnArcher"><kbd>2</kbd><i></i><span>弓手</span><em>80</em></button>
+            <button class="card" data-train="heavy"><kbd>3</kbd><i></i><span>重装</span><em>200</em></button>
+            <button class="card wide" id="btnAll"><span>全选</span><kbd>F</kbd></button>
+            <button class="card wide" id="btnRally"><span>集结</span><kbd>G</kbd></button>
           </div>
           <div class="row hidden" id="rowUnit2">
-            <button class="card" data-train="pikeman"><i>†</i><span>长枪兵</span><em>160</em></button>
-            <button class="card" data-train="knight"><i>♘</i><span>骑士</span><em>240</em></button>
-            <button class="card" data-train="catapult"><i>∩</i><span>投石车</span><em>420</em></button>
-            <button class="card" data-train="champion"><i>♚</i><span>近卫军</span><em>450</em></button>
+            <button class="card" data-train="pikeman"><kbd>4</kbd><i></i><span>长枪兵</span><em>160</em></button>
+            <button class="card" data-train="knight"><kbd>5</kbd><i></i><span>骑士</span><em>240</em></button>
+            <button class="card" data-train="catapult"><kbd>6</kbd><i></i><span>投石车</span><em>420</em></button>
+            <button class="card" data-train="champion"><kbd>7</kbd><i></i><span>近卫军</span><em>450</em></button>
           </div>
         </div>
       </div>
@@ -89,11 +97,13 @@
         </div>
         <p id="civDesc" class="sub" style="font-size:12px;max-width:400px">后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。</p>
         <button id="btnStart" class="primary">开 战</button>
+        <button id="btnCodex" class="slim">📖 兵种图鉴</button>
         <ul class="hint">
           <li>⚜ 占领金矿扩张经济，黄金即兵力</li>
-          <li>⚔ 点选部队 → 点目标，移动即进攻</li>
-          <li>🔍 滚轮 / 双指捏合缩放，小地图点击跳转</li>
-          <li>📱 手机触屏与电脑鼠标均可游玩</li>
+          <li>⚔ 点选部队 → 点目标；右键下令，Shift+右键 强制走位不接战</li>
+          <li>⌨ 卡片热键 Q/E/R/T/Y 建造 · 1-7 出兵 · A+左键 攻击移动 · Tab 跳告警</li>
+          <li>🔍 滚轮缩放 / 鼠标推边缘或方向键平移 / 小地图点击跳转</li>
+          <li>📱 手机触屏与电脑鼠标均可游玩（双指轻点 = 强制移动）</li>
         </ul>
       </div>
 
@@ -102,9 +112,28 @@
         <h2>已暂停</h2>
         <button id="btnResume" class="primary">继续</button>
         <button id="btnRestart">重新开始</button>
+        <button id="btnCodex2">📖 兵种图鉴</button>
         <button id="btnSound">音效：开</button>
         <button id="btnMusic">音乐：开</button>
+        <div id="settingsBox">
+          <div class="setRow"><label>主音量</label><input type="range" id="setMaster" min="0" max="1" step="0.05"></div>
+          <div class="setRow"><label>音乐</label><input type="range" id="setMusic" min="0" max="1" step="0.05"></div>
+          <div class="setRow"><label>音效</label><input type="range" id="setSfx" min="0" max="1" step="0.05"></div>
+          <div class="setRow"><label>屏幕震动</label><input type="checkbox" id="setShake"></div>
+          <div class="setRow"><label>边缘滚动</label><input type="checkbox" id="setEdge"></div>
+          <div class="setRow"><label>目标链</label><input type="checkbox" id="setChain"></div>
+          <div class="setRow"><label>伤害数字</label><input type="checkbox" id="setDmg"></div>
+          <div class="setRow"><label>昼夜循环</label><input type="checkbox" id="setDayNight"></div>
+        </div>
         <button id="btnQuit">返回菜单</button>
+      </div>
+
+      <!-- 兵种图鉴 -->
+      <div id="codexScr" class="screen hidden">
+        <h2>兵 种 图 鉴</h2>
+        <p class="sub">克制关系与解锁条件均由游戏数值实时生成</p>
+        <div id="codexBody"></div>
+        <button id="btnCodexOk" class="primary">关闭</button>
       </div>
 
       <!-- 结算 -->
@@ -122,12 +151,14 @@
         <p id="tipsMap" class="sub"></p>
         <ul>
           <li>👆 点选部队后点地图下令；双击部队选中视野内全部同类</li>
-          <li>⚜ 建金矿抢矿脉，矿多兵多</li>
-          <li>⚔ 所有移动都是进攻令，部队沿途自动交战</li>
+          <li>⚜ 建金矿抢矿脉，矿多兵多；卡槽角标 = 键盘热键</li>
+          <li>⚔ 右键移动沿途自动交战；Shift+右键 强制走位不接战（拉扯保命）</li>
+          <li>⌨ Q/E/R/T/Y 建造 · 1-7 出兵 · A+左键 攻击移动 · F 全选 · Tab 跳告警</li>
           <li>🚩「集结」设定新兵集结点；双击军营可单独给它设集结点</li>
-          <li>🛡 选中部队后可下「固守」（不追击）或「撤退」（撤回城堡）</li>
+          <li>🛡 选中部队后可下「固守」（H，不追击）或「撤退」（X，撤回城堡）</li>
           <li>⚔ 克制三角：弓手 › 重装 › 步兵 › 弓手</li>
           <li>🏰 军械库解锁长枪兵/骑士，攻城工坊解锁投石车/近卫军</li>
+          <li>🏰 点自家建筑可查看并升级：箭塔（中原 U）/ 金矿加固（骑士团 I）</li>
           <li>🛡 下令移动自动分层：近战顶前、弓手/投石车拖后；新兵自动奔赴主力</li>
         </ul>
         <button id="btnTipsOk" class="primary">明白了</button>
