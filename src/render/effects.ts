@@ -1,10 +1,11 @@
 /** 纯视觉层特效（不影响模拟确定性） */
 interface Fx {
-  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash' | 'spark' | 'shock' | 'dust';
+  kind: 'ring' | 'boom' | 'mark' | 'built' | 'flash' | 'debris' | 'smoke' | 'slash' | 'spark' | 'shock' | 'dust' | 'text' | 'stain';
   x: number; y: number;
   t: number; dur: number;
   r: number;
   color: string;
+  text?: string;
   big: boolean;
   // debris/smoke/spark 粒子参数
   vx: number; vy: number;
@@ -25,11 +26,13 @@ export class Effects {
 
   push(kind: Fx['kind'], x: number, y: number, opts: { r?: number; color?: string; big?: boolean } = {}): void {
     const dur = kind === 'boom' ? 0.55 : kind === 'mark' ? 0.5 : kind === 'ring' ? 0.4
-      : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : kind === 'slash' ? 0.18 : kind === 'shock' ? 0.45 : 0.14;
+      : kind === 'built' ? 0.5 : kind === 'smoke' ? 0.9 : kind === 'slash' ? 0.18 : kind === 'shock' ? 0.45
+      : kind === 'text' ? 0.85 : kind === 'stain' ? 7 : 0.14;
     this.add({ kind, x, y, dur, r: opts.r ?? 10, color: opts.color ?? '#ffffff', big: opts.big ?? false, vx: 0, vy: 0 });
   }
 
   dieEvent(x: number, y: number, r: number, side: Side, big = false): void {
+    this.stain(x, y, big ? r * 1.5 : r * 1.15);
     this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big, vx: 0, vy: 0 });
     // 内圈反向收拢，两圈一扩一缩，比单环更有"爆开"的层次
     this.add({ kind: 'shock', x, y, dur: 0.3, r: r + 10, color: 'rgba(255,255,255,0.9)', big, vx: 0, vy: 0 });
@@ -106,6 +109,16 @@ export class Effects {
     this.add({ kind: 'flash', x, y, dur: 0.14, r: big ? 7 : 4.5, color: '#fde68a', big, vx: 0, vy: 0 });
   }
 
+  /** 伤害数字：上飘渐隐（设置可关） */
+  dmgText(x: number, y: number, text: string): void {
+    this.add({ kind: 'text', x: x + (Math.random() - 0.5) * 10, y: y - 8, dur: 0.85, r: 0, color: '#ffe9a8', big: false, vx: 0, vy: 0, text });
+  }
+
+  /** 尸痕/焦痕：淡出的地面暗斑，战后痕迹感 */
+  stain(x: number, y: number, r: number): void {
+    this.add({ kind: 'stain', x, y, dur: 7, r, color: '#14100a', big: false, vx: 0, vy: 0 });
+  }
+
   /** 近战挥砍：没有弹道，用一道弧线表现，和远程的闪光区分开 */
   slash(x: number, y: number, big: boolean): void {
     this.add({ kind: 'slash', x, y, dur: 0.18, r: big ? 19 : 13, color: '#e2e8f0', big, vx: 0, vy: 0 });
@@ -162,6 +175,25 @@ export class Effects {
           g.fillStyle = '#64748b';
           g.beginPath();
           g.arc(f.x, f.y, f.r * (0.6 + k * 0.8), 0, Math.PI * 2);
+          g.fill();
+          break;
+        }
+        case 'text': {
+          g.globalAlpha = k < 0.7 ? 1 : (1 - k) / 0.3;
+          g.fillStyle = f.color;
+          g.font = '700 11px ui-sans-serif, system-ui, sans-serif';
+          g.textAlign = 'center';
+          g.strokeStyle = 'rgba(20,14,6,0.9)';
+          g.lineWidth = 2.5;
+          g.strokeText(f.text ?? '', f.x, f.y - k * 16);
+          g.fillText(f.text ?? '', f.x, f.y - k * 16);
+          break;
+        }
+        case 'stain': {
+          g.globalAlpha = 0.22 * (1 - k);
+          g.fillStyle = f.color;
+          g.beginPath();
+          g.ellipse(f.x, f.y, f.r * (1 + k * 0.15), f.r * 0.6, 0, 0, Math.PI * 2);
           g.fill();
           break;
         }

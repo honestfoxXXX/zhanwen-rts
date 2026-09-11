@@ -120,6 +120,8 @@ export interface SimEvent {
   melee?: boolean;
   /** moveMark 事件附带：强制移动(true)用白色落点标记与普通移动区分 */
   forced?: boolean;
+  /** shot 事件附带：本次伤害期望值（表现层飘伤害数字） */
+  dmg?: number;
   /** shot 事件附带：攻击来源（表现层选音效：投石三段 / 塔 / 单位） */
   from?: 'unit' | 'tower' | 'catapult';
 }

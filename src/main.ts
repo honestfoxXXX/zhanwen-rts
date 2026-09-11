@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, MAPS, MAP_H, MAP_W } from './core/config';
+import { BUILDING_DEFS, MAPS, MAP_H, MAP_W, UNIT_DEFS } from './core/config';
 import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
 import type { BuildingType, CivId, Projectile, World } from './core/types';
@@ -10,6 +10,7 @@ import { Input } from './input/input';
 import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
 import { initAudio, isMuted, play, setBattleIntensity, toggleMute, toggleMusic } from './sound';
+import { notifyHit, tickFlash, damageNumbersOn } from './render/feedback';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const frame = document.getElementById('frame') as HTMLDivElement;
@@ -309,14 +310,37 @@ function volAt(x: number, y: number): number {
   return Math.max(0.12, 1 - d / viewR);
 }
 
+/** 命中点附近最近实体（闪白反馈定位用）：先部队后建筑，容差 = 半径 + 10 */
+function entityNear(w: World, x: number, y: number): { id: number } | null {
+  let best: { id: number; d: number } | null = null;
+  for (const u of w.units) {
+    if (u.dead) continue;
+    const d = Math.hypot(u.x - x, u.y - y) - UNIT_DEFS[u.type].radius;
+    if (d <= 10 && (!best || d < best.d)) best = { id: u.id, d };
+  }
+  if (best) return { id: best.id };
+  for (const b of w.buildings) {
+    if (b.dead) continue;
+    const d = Math.hypot(b.x - x, b.y - y) - b.half;
+    if (d <= 12) return { id: b.id };
+  }
+  return null;
+}
+
 function drainEvents(): void {
   if (!world) return;
   let ended = false;
   let combat = 0;
   for (const e of world.events) {
     switch (e.type) {
-      case 'shot':
+      case 'shot': {
         combat++;
+        // 打击感：命中实体闪白 + 伤害数字（容差内找最近的受击实体）
+        if (e.tx !== undefined && e.ty !== undefined) {
+          const victim = entityNear(world, e.tx, e.ty);
+          if (victim) notifyHit(victim.id);
+          if (damageNumbersOn() && e.dmg) fx.dmgText(e.tx, e.ty, String(e.dmg));
+        }
         if (e.x !== undefined && e.y !== undefined) {
           // 近战没有弹道，用一道挥砍弧线表现，与远程的枪口闪光区分开
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
@@ -330,6 +354,7 @@ function drainEvents(): void {
           triggerAlert(e.tx, e.ty, e.targetBuilding ?? false);
         }
         break;
+      }
       case 'die':
         combat += 2;
         if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
@@ -407,6 +432,7 @@ function loop(ts: number): void {
     if (acc > STEP * 6) acc = 0;
   }
   fx.update(dtReal);
+  tickFlash(dtReal);
   // 震动衰减：简谐衰减，比线性自然
   if (shakeT > 0) {
     shakeT -= dtReal;

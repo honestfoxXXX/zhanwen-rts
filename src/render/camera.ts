@@ -24,9 +24,9 @@ export class Camera {
     this.clamp();
   }
 
-  /** 玩法默认档：视口宽约 820 世界像素（单位直径 ~9 css px） */
+  /** 玩法默认档：视口宽约 560 世界像素 —— 单位与建筑有足够的屏幕存在感 */
   defaultScale(): number {
-    return this.cssW / 820;
+    return this.cssW / 560;
   }
 
   private zoomTarget: number | null = null;

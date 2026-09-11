@@ -604,6 +604,7 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
     targetSide: t.side,
     targetBuilding: !isUnit(t), melee: def.projectileSpeed === 0,
     from: u.type === 'catapult' ? 'catapult' : 'unit',
+    dmg: Math.round(dmg),
   });
   // 溅射（投石车独占）：石弹落点 90px 内的其他敌方单位受基准伤害 50% —— 对密集阵型的独占威慑
   if (u.type === 'catapult') {
@@ -949,6 +950,7 @@ function updateBuildings(w: World, dt: number): void {
       ev(w, {
         type: 'shot', x: b.x, y: b.y, tx: best.x, ty: best.y,
         side: b.side, big: false, targetSide: best.side, melee: false, from: 'tower',
+        dmg: Math.round(wpnDmg),
       });
       w.projectiles.push({
         x: b.x, y: b.y, sx: b.x, sy: b.y, tx: best.x, ty: best.y,

@@ -7,6 +7,7 @@ import type { Camera } from './camera';
 import { draw as drawMinimap } from './minimap';
 import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SHAPES } from './shapes';
 import { getSprite } from './spriteCache';
+import { flashOf } from './feedback';
 import type { BuildingType, Side } from '../core/types';
 
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
@@ -1016,9 +1017,12 @@ function drawTowerWalls(ctx: CanvasRenderingContext2D, w: World): void {
 function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected = false): void {
   const def = UNIT_DEFS[u.type];
   const r = def.radius;
-  const justFired = u.cd > def.cooldown - 0.12;
-  const recoilX = justFired ? -Math.cos(u.facing) * 2 : 0;
-  const recoilY = justFired ? -Math.sin(u.facing) * 2 : 0;
+  // 出手动画：近战向目标前刺、远程向后坐，0.14s 内回位
+  const melee = def.projectileSpeed === 0;
+  const strikeK = u.cd > def.cooldown - 0.14 ? (u.cd - (def.cooldown - 0.14)) / 0.14 : 0;
+  const strike = melee ? 3.4 * strikeK : -2.2 * strikeK;
+  const recoilX = Math.cos(u.facing) * strike;
+  const recoilY = Math.sin(u.facing) * strike;
   const moving = u.path.length > 0;
   const bob = moving ? Math.sin(time * 11 + u.id * 1.7) * UNIT_SHAPES[u.type].bob : 0;
   const breathe = 1 + 0.025 * Math.sin(time * 3 + u.id * 2.1);
@@ -1036,6 +1040,18 @@ function drawUnit(ctx: CanvasRenderingContext2D, u: Unit, time: number, selected
   ctx.translate(u.x + recoilX, u.y + recoilY + bob);
   drawUnitDecals(ctx, u.type, u.side, r);
   ctx.restore();
+  // 受击闪白：命中后 0.1s 的暖白脉冲，读得出"谁在掉血"
+  const flash = flashOf(u.id);
+  if (flash > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.5 * flash;
+    ctx.fillStyle = '#fff6dc';
+    ctx.beginPath();
+    ctx.arc(u.x, u.y, r * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   // 选中的部队常驻血条，方便在混战里掌握残血单位
   if (selected || u.hp < u.maxHp) hpBar(ctx, u.x, u.y - r - 8, r * 2, u.hp, u.maxHp);
 }
@@ -1677,7 +1693,7 @@ function drawBuildingDynamic(
 }
 
 function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number): void {
-  const h = b.half;
+  const h = b.half * 1.18; // 视觉放大：建筑在屏幕上更有体积感（碰撞仍用 sim half）
   const constructing = b.buildT > 0;
   ctx.save();
   ctx.translate(b.x, b.y);
@@ -1723,6 +1739,17 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building, time: number):
       paintBuildingStatic(g, b.type, b.side, h, dmg);
     });
     ctx.drawImage(sprite, -S, -S, S * 2, S * 2);
+    const flash = flashOf(b.id);
+    if (flash > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.42 * flash;
+      ctx.fillStyle = '#fff6dc';
+      ctx.beginPath();
+      ctx.arc(0, 0, h * 1.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     if (dmg >= 1) smokePuffs(ctx, dmg === 2 ? -h * 0.3 : h * 0.25, -h * 0.7, time * 0.5 + b.id);
     drawBuildingDynamic(ctx, b, h, time);
     // 训练进度
