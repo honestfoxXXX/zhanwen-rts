@@ -251,3 +251,76 @@ button:disabled { opacity: 0.35; cursor: default; }
   pointer-events: none;
 }
 .card:disabled kbd { opacity: 0.35; }
+
+/* ---- C1 新手目标链 ---- */
+#goalChain {
+  position: absolute; top: 76px; left: 8px;
+  max-width: 46%;
+  background: rgba(26, 18, 8, 0.88);
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  border-radius: 8px;
+  padding: 6px 9px;
+  pointer-events: auto;
+  user-select: none;
+}
+#chainHead {
+  font-size: 11px; letter-spacing: 1px; color: #b3a284;
+  cursor: pointer; display: flex; justify-content: space-between; gap: 10px;
+}
+#chainList { margin: 4px 0 0; padding: 0 0 0 2px; list-style: none; }
+#chainList li {
+  font-size: 11.5px; color: #efe4c8; line-height: 1.75;
+  display: flex; align-items: center; gap: 6px;
+}
+#chainList li .tick { width: 13px; text-align: center; color: #4a4234; }
+#chainList li.done { color: #7d715c; text-decoration: line-through; }
+#chainList li.done .tick { color: #9db86a; }
+#chainList li.now .tick { color: #d9b44a; }
+#chainList li.now { color: #ffe9a8; }
+#goalChain.folded #chainList { display: none; }
+
+/* ---- C4 消息流（分级告警，左侧竖排） ---- */
+#feed {
+  position: absolute; top: 130px; left: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  max-width: 56%;
+  pointer-events: none;
+}
+.feedItem {
+  font-size: 11.5px; line-height: 1.4;
+  padding: 4px 9px; border-radius: 6px;
+  background: rgba(26, 18, 8, 0.86);
+  border-left: 3px solid rgba(201, 162, 39, 0.7);
+  color: #d9cdb0;
+  animation: feedIn 0.16s ease, feedOut 0.5s ease 4.6s forwards;
+}
+.feedItem.danger { border-left-color: #f87171; color: #fecaca; }
+.feedItem.warn { border-left-color: #d9a24a; color: #f5e2c0; }
+@keyframes feedIn { from { opacity: 0; transform: translateX(-8px); } }
+@keyframes feedOut { to { opacity: 0; } }
+
+/* ---- C2 选中信息面板 ---- */
+#selPanel {
+  position: absolute; left: 8px; right: 8px; bottom: 128px;
+  display: flex; gap: 6px; align-items: stretch;
+  background: rgba(26, 18, 8, 0.9);
+  border: 1px solid rgba(201, 162, 39, 0.35);
+  border-radius: 10px;
+  padding: 6px 8px;
+  pointer-events: none;
+  overflow-x: auto;
+}
+#selPanel .grp {
+  min-width: 74px;
+  padding: 3px 7px;
+  border: 1px solid rgba(201, 162, 39, 0.22);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.18);
+}
+#selPanel .grp .nm { font-size: 11px; color: #efe4c8; display: flex; justify-content: space-between; gap: 8px; }
+#selPanel .grp .nm b { color: #d9b44a; }
+#selPanel .grp .st { font-size: 10px; color: #b3a284; margin-top: 1px; white-space: nowrap; }
+#selPanel .grp .hpbar { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.08); margin-top: 4px; }
+#selPanel .grp .hpbar i { display: block; height: 100%; border-radius: 2px; }
+#selPanel .binfo { font-size: 11.5px; color: #efe4c8; line-height: 1.5; padding: 3px 6px; }
+#selPanel .binfo b { color: #d9b44a; }

@@ -17,6 +17,12 @@ const DENY_TEXT: Record<string, string> = {
 /** 阵营中文名，结算战报用 */
 const SIDE_LABEL = ['蓝衫军', '红衫军', '金衫军'];
 
+/** 兵种中文名 */
+const UNIT_NAME: Record<string, string> = {
+  infantry: '步兵', archer: '弓手', heavy: '重装', pikeman: '长枪兵', knight: '骑士',
+  catapult: '投石车', champion: '近卫军', horsearcher: '游骑兵', healer: '牧师',
+};
+
 export interface HudHooks {
   start: (d: Difficulty, players: number) => void;
   pause: () => void;
@@ -57,6 +63,8 @@ export class Hud {
     rowUp: $('rowTower'), btnTowerUp: $('btnTowerUp'), btnMineUp: $('btnMineUp'),
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
+    chain: $('goalChain'), chainHead: $('chainHead'), chainList: $('chainList'), chainToggle: $('chainToggle'),
+    feed: $('feed'), selPanel: $('selPanel'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
     tipsMap: $('tipsMap'),
     sound: $('btnSound'),
@@ -86,6 +94,7 @@ export class Hud {
     $('btnMineUp').addEventListener('click', () => hooks.mineUpgrade());
     $('btnFront').addEventListener('click', () => hooks.pickFront());
     $('btnBack').addEventListener('click', () => hooks.pickBack());
+    this.els.chainHead.addEventListener('click', () => this.els.chain.classList.toggle('folded'));
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
     this.els.placeNo.addEventListener('click', () => hooks.placeNo());
     $('btnDesel').addEventListener('click', () => hooks.desel());
@@ -228,6 +237,131 @@ export class Hud {
     this.els.sound.textContent = `音效：${v}`;
   }
 
+  /** 分级消息流：danger 红 / warn 琥珀 / info 素金。替代四处乱飞的中心 toast */
+  feed(msg: string, level: 'danger' | 'warn' | 'info' = 'info'): void {
+    const box = this.els.feed;
+    while (box.children.length >= 4) box.firstChild?.remove();
+    const t = document.createElement('div');
+    t.className = `feedItem ${level}`;
+    t.textContent = msg;
+    box.appendChild(t);
+    setTimeout(() => t.remove(), 5300);
+  }
+
+  /* ---- C1 目标链：随局势自动打勾，给新手一条明确的主线 ---- */
+  private chainKey = '';
+  updateGoalChain(world: World): void {
+    const own = world.buildings.filter(b => b.side === 0 && !b.dead);
+    const has = (t: string) => own.some(b => b.type === t);
+    const pop = world.popUsed[0];
+    const steps: { text: string; done: boolean }[] = [
+      { text: '占领一座金矿（Q）', done: has('mine') },
+      { text: '建造军营（E）', done: has('barracks') },
+      { text: `训练部队 ${Math.min(pop, 12)}/12`, done: pop >= 12 },
+      { text: '建造军械库，解锁二本兵（T）', done: has('smithy') },
+    ];
+    if (world.players > 2) {
+      const crownDone = world.crown.side === 0 && world.crown.t >= 45;
+      steps.push({ text: '残局驻军王冠之地（质心）45s 即胜', done: crownDone });
+      steps.push({ text: '或扫平其余城堡', done: false });
+    } else {
+      steps.push({ text: '摧毁敌方城堡', done: false });
+    }
+    const nowIdx = steps.findIndex(x => !x.done);
+    const key = steps.map(x => (x.done ? '1' : '0')).join('') + String(nowIdx);
+    if (key === this.chainKey) return; // 状态没变不重绘
+    this.chainKey = key;
+    this.els.chainList.textContent = '';
+    steps.forEach((x, i) => {
+      const li = document.createElement('li');
+      // 步骤可乱序完成：完成的独立打勾，第一个未完成的成为当前目标
+      if (x.done) li.className = 'done';
+      else if (i === nowIdx) li.className = 'now';
+      const tick = document.createElement('span');
+      tick.className = 'tick';
+      tick.textContent = x.done ? '✓' : i === nowIdx ? '▶' : '·';
+      li.appendChild(tick);
+      li.appendChild(document.createTextNode(x.text));
+      this.els.chainList.appendChild(li);
+    });
+  }
+
+  /* ---- C2 选中信息面板：兵种分组聚合 + 建筑情报 ---- */
+  private selPanelKey = '';
+  updateSelPanel(world: World, ui: UIState): void {
+    const panel = this.els.selPanel;
+    // 部队分组
+    if (ui.selection.length) {
+      const groups = new Map<string, { n: number; hp: number; max: number }>();
+      for (const id of ui.selection) {
+        const u = world.units.find(v => v.id === id && !v.dead);
+        if (!u || u.side !== 0) continue;
+        const g = groups.get(u.type) ?? { n: 0, hp: 0, max: 0 };
+        g.n++; g.hp += u.hp; g.max += u.maxHp;
+        groups.set(u.type, g);
+      }
+      const key = [...groups].map(([t, g]) => `${t}:${g.n}:${Math.round(g.hp)}`).join('|');
+      if (key !== this.selPanelKey) {
+        this.selPanelKey = key;
+        panel.textContent = '';
+        for (const [t, g] of groups) {
+          const d = UNIT_DEFS[t as UnitType];
+          const div = document.createElement('div');
+          div.className = 'grp';
+          const frac = g.max ? g.hp / g.max : 0;
+          div.innerHTML =
+            `<div class="nm">${UNIT_NAME[t] ?? t}<b>×${g.n}</b></div>` +
+            `<div class="st">攻${d.damage} · 程${d.range} · 速${d.speed}</div>` +
+            `<div class="hpbar"><i style="width:${(frac * 100).toFixed(0)}%;background:${frac > 0.6 ? '#9db86a' : frac > 0.3 ? '#d9a24a' : '#f87171'}"></i></div>`;
+          this.paintIconAt(div, 'unit', t as UnitType);
+          panel.appendChild(div);
+        }
+      }
+      panel.classList.remove('hidden');
+      return;
+    }
+    // 建筑情报
+    if (ui.buildingSel !== null) {
+      const b = world.buildings.find(v => v.id === ui.buildingSel && !v.dead && v.side === 0);
+      if (!b) { panel.classList.add('hidden'); this.selPanelKey = ''; return; }
+      const d = BUILDING_DEFS[b.type];
+      const q = b.trainType ? `出兵中：${UNIT_NAME[b.trainType] ?? ''} ${Math.ceil(b.trainT)}s` : (world.queue[0].length ? '排队中' : '空闲');
+      const lv = b.type === 'tower' ? ` · Lv${b.level}` : b.type === 'mine' && (b.mineLevel ?? 0) > 0 ? ` · 加固 Lv${b.mineLevel}` : '';
+      const key = `b:${b.id}:${Math.ceil(b.hp)}:${b.trainType ?? ''}:${Math.ceil(b.trainT)}`;
+      if (key !== this.selPanelKey) {
+        this.selPanelKey = key;
+        panel.textContent = '';
+        const div = document.createElement('div');
+        div.className = 'binfo';
+        const frac = Math.max(0, b.hp / b.maxHp);
+        div.innerHTML =
+          `<b>${d.name}${lv}</b> · 血量 ${Math.max(0, Math.ceil(b.hp))}/${b.maxHp}（${(frac * 100).toFixed(0)}%） · ${q}` +
+          (b.rally ? ` · 集结点已设` : '');
+        this.paintIconAt(div, 'building', b.type);
+        panel.appendChild(div);
+      }
+      panel.classList.remove('hidden');
+      return;
+    }
+    panel.classList.add('hidden');
+    this.selPanelKey = '';
+  }
+
+  /** 在容器左上角画一枚与战场同源的小图标 */
+  private paintIconAt(host: HTMLElement, kind: 'unit' | 'building', type: UnitType | BuildingType): void {
+    const cv = document.createElement('canvas');
+    const size = 20;
+    const ratio = Math.min(2.5, window.devicePixelRatio || 1);
+    cv.width = Math.round(size * ratio);
+    cv.height = Math.round(size * ratio);
+    cv.style.width = cv.style.height = `${size}px`;
+    cv.style.verticalAlign = '-4px';
+    cv.style.marginRight = '4px';
+    const g = cv.getContext('2d');
+    if (g) { g.scale(ratio, ratio); drawIcon(g, kind, type, 0, size); }
+    host.prepend(cv);
+  }
+
   /** 每 4 帧刷新数值，结构行（模式切换）每帧即时更新 */
   update(world: World, ui: UIState, modeLabel: string | null): void {
     // 结构行：立即响应，避免操作行与卡槽短暂同屏
@@ -251,6 +385,8 @@ export class Hud {
     }
 
     if (++this.frame % 4 !== 0) return;
+    this.updateGoalChain(world);
+    this.updateSelPanel(world, ui);
     const cr = Math.floor(world.crystals[0]);
     this.els.crystal.textContent = String(cr);
     this.els.income.textContent = `+${world.income[0].toFixed(0)}/s`;

@@ -171,6 +171,9 @@ function startGame(diff: World['difficulty'], players = 2): void {
   world = createWorld(diff, seed, mapIndex, civs);
   hud.setMapBrief(map.name, map.brief);
   hud.toast(`地形：${map.name} —— ${map.brief}`);
+  // 对手文明情报：打法提示帮玩家预判（游牧偷矿 / 中原塔阵 / 骑士团会战）
+  const CIV_NAME: Record<CivId, string> = { central: '中原王朝（塔阵人海）', nomad: '草原游牧（掠夺偷矿）', knight: '圣辉骑士团（单兵会战）' };
+  for (let i = 1; i < players; i++) hud.feed(`对手：${CIV_NAME[world.civs[i]]}`, 'warn');
   ui.selection = [];
   input.cancelMode();
   fx.clear();
@@ -237,6 +240,7 @@ function triggerAlert(x: number, y: number, building: boolean): void {
   if (alertLog.length > 8) alertLog.shift();
   alertLogI = alertLog.length; // Tab 从最新开始往回翻
   hud.showAlert(building ? '⚠ 城堡遇袭' : '⚠ 部队遭遇敌军');
+  hud.feed(building ? '⚠ 城堡遇袭 —— Tab 前往支援' : '⚠ 部队接敌', building ? 'danger' : 'warn');
   play('alarm');
 }
 
@@ -341,20 +345,21 @@ function drainEvents(): void {
       case 'built':
         if (e.x !== undefined && e.y !== undefined && e.side !== undefined) fx.builtEvent(e.x, e.y, e.side);
         play('built', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
+        if (e.side === 0) hud.feed('一座建筑完工', 'info');
         break;
       case 'moveMark':
         if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y, e.forced ?? false);
         play('move');
         break;
       case 'wave':
-        hud.toast('⚠ 敌军大举来犯！');
+        hud.feed('⚠ 敌军大举来犯！', 'danger');
         play('alarm');
         break;
       case 'eliminated':
         // 我方被灭由结算处理；这里只报敌方出局，给玩家"局势推进"的反馈
         if (e.side !== 0 && world.alive) {
           const remain = world.alive.filter(Boolean).length;
-          hud.toast(`敌一支军团覆灭，还剩 ${remain} 方`);
+          hud.feed(`敌一支军团覆灭，还剩 ${remain} 方`, 'info');
         }
         break;
       case 'denied':
