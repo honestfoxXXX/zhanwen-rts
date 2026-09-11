@@ -1,7 +1,7 @@
 import { BUILDING_DEFS, MAPS, MAP_H, MAP_W } from './core/config';
 import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
-import type { CivId, Projectile, World } from './core/types';
+import type { BuildingType, CivId, Projectile, World } from './core/types';
 import { Camera } from './render/camera';
 import { Effects } from './render/effects';
 import { draw, initRenderer } from './render/renderer';
@@ -17,7 +17,7 @@ const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
 const cam = new Camera();
 const fx = new Effects();
-const ui: UIState = { selection: [], mode: 'none', placing: null, ghost: null, boxRect: null, rallyFor: null };
+const ui: UIState = { selection: [], buildingSel: null, mode: 'none', placing: null, ghost: null, boxRect: null, rallyFor: null };
 
 let world: World | null = null;
 let state: 'menu' | 'play' | 'pause' | 'over' = 'menu';
@@ -105,13 +105,21 @@ const hud = new Hud({
     play('ui');
   },
   towerUpgrade: () => {
-    if (!world || state !== 'play' || !ui.selection.length) return;
-    const b = world.buildings.find(v => v.id === ui.selection[0] && v.type === 'tower');
-    if (!b) { hud.toast('没有选中的箭塔'); return; }
+    if (!world || state !== 'play' || ui.buildingSel === null) return;
+    const b = world.buildings.find(v => v.id === ui.buildingSel && v.type === 'tower' && !v.dead);
+    if (!b) { hud.toast('请先点选一座自己的箭塔'); return; }
     if (b.level >= 3) { hud.toast('已达最高等级'); return; }
     const cost = b.level === 1 ? 150 : 300;
     const ok = issueCommand(world, { type: 'upgradeTower', side: 0, buildingId: b.id });
     hud.toast(ok ? `箭塔升级中（${b.level}→${b.level + 1} 级）` : `黄金不足（需 ${cost}）`);
+    play('ui');
+  },
+  mineUpgrade: () => {
+    if (!world || state !== 'play' || ui.buildingSel === null) return;
+    const b = world.buildings.find(v => v.id === ui.buildingSel && v.type === 'mine' && !v.dead);
+    if (!b) { hud.toast('请先点选一座自己的金矿'); return; }
+    const ok = issueCommand(world, { type: 'upgradeMine', side: 0, buildingId: b.id });
+    hud.toast(ok ? '金矿升级中 —— 更厚更硬' : '已达最高等级或黄金不足');
     play('ui');
   },
   hold: () => {
@@ -214,6 +222,9 @@ function shake(amp: number, dur: number): void {
 interface AlertState { x: number; y: number; building: boolean; life: number }
 let alert: AlertState | null = null;
 const alertCd = { building: 0, unit: 0 };
+/** 告警历史（Tab 循环跳转）：只记位置，不抢镜头 */
+const alertLog: { x: number; y: number }[] = [];
+let alertLogI = 0;
 
 /** 必须节流：否则敌人每一次开火都会弹提示，等于没有提示 */
 function triggerAlert(x: number, y: number, building: boolean): void {
@@ -222,32 +233,64 @@ function triggerAlert(x: number, y: number, building: boolean): void {
   if (now - alertCd[key] < (building ? 3 : 6)) return;
   alertCd[key] = now;
   alert = { x, y, building, life: 2.4 };
+  alertLog.push({ x, y });
+  if (alertLog.length > 8) alertLog.shift();
+  alertLogI = alertLog.length; // Tab 从最新开始往回翻
   hud.showAlert(building ? '⚠ 城堡遇袭' : '⚠ 部队遭遇敌军');
   play('alarm');
 }
 
-/** 屏幕边缘泛红：让发生在屏幕外的战况有存在感 */
+/** Tab：循环跳到最近的告警点（大图导航的核心键） */
+function cycleAlert(): void {
+  if (!alertLog.length || !world) return;
+  alertLogI = (alertLogI - 1 + alertLog.length) % alertLog.length;
+  const a = alertLog[alertLogI];
+  cam.centerOn(a.x, a.y);
+}
+
+/** 告警方向指示：屏幕内→四边泛红；屏幕外→对应边缘红晕 + 指向箭头，威胁方位一眼可读 */
 function drawAlertGlow(g: CanvasRenderingContext2D): void {
   if (!alert) return;
   const k = Math.min(1, alert.life / 0.5);
-  const w = Math.min(26, cam.cssW * 0.09);
+  const sx = (alert.x - cam.x) * cam.scale;
+  const sy = (alert.y - cam.y) * cam.scale;
+  const onScreen = sx >= -40 && sx <= cam.cssW + 40 && sy >= -40 && sy <= cam.cssH + 40;
   g.save();
-  g.globalAlpha = 0.5 * k;
-  const edges: [number, number, number, number][] = [
-    [0, 0, 0, w],
-    [0, cam.cssH - w, 0, cam.cssH],
-    [0, 0, w, 0],
-    [cam.cssW - w, 0, cam.cssW, 0],
-  ];
-  for (const [x0, y0, x1, y1] of edges) {
-    const grad = g.createLinearGradient(x0, y0, x1, y1);
-    grad.addColorStop(0, 'rgba(248,113,113,0.9)');
+  g.globalAlpha = 0.55 * k;
+  if (onScreen) {
+    const w = Math.min(26, cam.cssW * 0.09);
+    const edges: [number, number, number, number][] = [
+      [0, 0, 0, w], [0, cam.cssH - w, 0, cam.cssH], [0, 0, w, 0], [cam.cssW - w, 0, cam.cssW, 0],
+    ];
+    for (const [x0, y0, x1, y1] of edges) {
+      const grad = g.createLinearGradient(x0, y0, x1, y1);
+      grad.addColorStop(0, 'rgba(248,113,113,0.85)');
+      grad.addColorStop(1, 'rgba(248,113,113,0)');
+      g.fillStyle = grad;
+      g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0) || cam.cssW, Math.abs(y1 - y0) || cam.cssH);
+    }
+  } else {
+    // 方向边缘：把威胁方向钉在对应边上
+    const cx = cam.cssW / 2, cy = cam.cssH / 2;
+    const ang = Math.atan2(sy - cy, sx - cx);
+    const halfW = cam.cssW / 2, halfH = cam.cssH / 2;
+    const t = Math.min(
+      halfW / Math.abs(Math.cos(ang) || 1e-6),
+      halfH / Math.abs(Math.sin(ang) || 1e-6),
+    );
+    const ex = cx + Math.cos(ang) * t, ey = cy + Math.sin(ang) * t;
+    const grad = g.createRadialGradient(ex, ey, 0, ex, ey, 90);
+    grad.addColorStop(0, 'rgba(248,113,113,0.75)');
     grad.addColorStop(1, 'rgba(248,113,113,0)');
     g.fillStyle = grad;
-    g.fillRect(
-      Math.min(x0, x1), Math.min(y0, y1),
-      Math.abs(x1 - x0) || cam.cssW, Math.abs(y1 - y0) || cam.cssH,
-    );
+    g.beginPath(); g.arc(ex, ey, 90, 0, Math.PI * 2); g.fill();
+    // 指向箭头
+    g.translate(ex, ey); g.rotate(ang);
+    g.fillStyle = 'rgba(252,165,165,0.95)';
+    const pulse = 4 + Math.sin(performance.now() / 120) * 2;
+    g.beginPath();
+    g.moveTo(pulse, 0); g.lineTo(-8, -11); g.lineTo(-8, 11);
+    g.closePath(); g.fill();
   }
   g.restore();
 }
@@ -300,7 +343,7 @@ function drainEvents(): void {
         play('built', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         break;
       case 'moveMark':
-        if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y);
+        if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y, e.forced ?? false);
         play('move');
         break;
       case 'wave':
@@ -345,6 +388,7 @@ function loop(ts: number): void {
   const dtReal = Math.min(0.25, (ts - lastTs) / 1000 || 0);
   lastTs = ts;
 
+  cam.update(dtReal);
   if (state === 'play' && world && !world.gameOver) {
     input.update(dtReal);
     acc += dtReal;
@@ -435,13 +479,21 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// 空格：跳到最近交战点/己方军队；C：回到城堡（大图导航）
+// 热键总调度：
+//   空格 跳交战/军队 · C 回城堡 · Tab 循环告警点 · P 暂停
+//   Q/E/R/T/Y/B 建造 · 1-7 出兵（按卡槽可见顺序） · F 全选 · G 集结
+//   U 升级箭塔 · I 升级金矿 · H 固守 · X 撤退 · Esc 取消
+//   A+左键 攻击移动 · Shift+右键/双指轻点 强制移动
+const BUILD_KEYS: Record<string, BuildingType> = { q: 'mine', e: 'barracks', r: 'tower', t: 'smithy', y: 'workshop', b: 'farm' };
 window.addEventListener('keydown', e => {
   if (state !== 'play' || !world) return;
+  const k = e.key.toLowerCase();
   if (e.key === ' ') {
     e.preventDefault();
-    if (alert) cam.centerOn(alert.x, alert.y);
-    else {
+    if (alertLog.length) {
+      const a = alertLog[alertLog.length - 1];
+      cam.centerOn(a.x, a.y);
+    } else {
       let sx = 0, sy = 0, n = 0;
       for (const u of world.units) {
         if (u.side === 0 && !u.dead) { sx += u.x; sy += u.y; n++; }
@@ -449,8 +501,25 @@ window.addEventListener('keydown', e => {
       if (n) cam.centerOn(sx / n, sy / n);
       else cam.centerOn(world.spawns[0].x, world.spawns[0].y);
     }
-  } else if (e.key === 'c' || e.key === 'C') {
-    cam.centerOn(world.spawns[0].x, world.spawns[0].y);
+    return;
+  }
+  if (k === 'c') { cam.centerOn(world.spawns[0].x, world.spawns[0].y); return; }
+  if (e.key === 'Tab') { e.preventDefault(); cycleAlert(); return; }
+  if (k === 'p') { hud.pause(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const buildT = BUILD_KEYS[k];
+  if (buildT) {
+    if (buildT !== 'farm' || world.civs[0] === 'central') hud.buildByHotkey(buildT);
+    return;
+  }
+  if (k >= '1' && k <= '7') { hud.trainByHotkey(Number(k) - 1); return; }
+  switch (k) {
+    case 'f': hud.selectAll(); break;
+    case 'g': hud.rally(); break;
+    case 'u': hud.towerUpgrade(); break;
+    case 'i': hud.mineUpgrade(); break;
+    case 'h': hud.hold(); break;
+    case 'x': hud.retreat(); break;
   }
 });
 

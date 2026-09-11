@@ -233,3 +233,21 @@ button:disabled { opacity: 0.35; cursor: default; }
 
 #tips h3 { font-size: 20px; letter-spacing: 0.15em; }
 #tips li { font-size: 13.5px; color: #efe4c8; }
+
+/* ---- 卡片热键角标 ---- */
+.card { position: relative; }
+.card kbd {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  min-width: 13px;
+  padding: 0 3px;
+  font: 600 9px/14px ui-monospace, monospace;
+  text-align: center;
+  color: #d9b44a;
+  background: rgba(20, 16, 9, 0.55);
+  border: 1px solid rgba(201, 162, 39, 0.45);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.card:disabled kbd { opacity: 0.35; }

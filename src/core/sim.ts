@@ -383,6 +383,25 @@ export function issueCommand(w: World, c: Command): boolean {
       if (any) ev(w, { type: 'moveMark', x: c.x, y: c.y });
       return any;
     }
+    case 'moveForced': {
+      // 强制移动：不做阵型分层（微操要的是精确落点），沿途完全不接战
+      let any = false;
+      for (const id of c.ids) {
+        const u = unitOf(w, id, c.side);
+        if (!u) continue;
+        u.order = { kind: 'moveForced', x: c.x, y: c.y };
+        u.charged = true;
+        u.engageId = null;
+        const p = findPath(w.blocked, u.x, u.y, c.x, c.y);
+        u.path = p ?? [];
+        u.pathI = 0;
+        u.repathT = 0.4;
+        u.stuckT = 0;
+        any = true;
+      }
+      if (any) ev(w, { type: 'moveMark', x: c.x, y: c.y, forced: true });
+      return any;
+    }
     case 'attack': {
       const t = entityById(w, c.targetId);
       if (!t || t.dead || t.side === c.side) return false;
@@ -619,7 +638,7 @@ function stepToward(u: Unit, tx: number, ty: number, speed: number, dt: number):
 
 function followPath(w: World, u: Unit, dt: number, def: (typeof UNIT_DEFS)[UnitType]): void {
   // 撤退令抵达主基地后同样转为待命
-  const arrived = (): boolean => u.order.kind === 'move' || u.order.kind === 'retreat';
+  const arrived = (): boolean => u.order.kind === 'move' || u.order.kind === 'moveForced' || u.order.kind === 'retreat';
   if (u.pathI >= u.path.length) {
     if (arrived()) u.order = { kind: 'idle' };
     u.path = [];
@@ -684,6 +703,7 @@ function updateUnit(w: World, u: Unit, dt: number): void {
   }
   // 索敌范围：固守会迎战射程内之敌；撤退则完全脱战，否则会掉头追击、抵消撤退令
   if (!tgt && (u.order.kind === 'idle' || u.order.kind === 'move' || u.order.kind === 'hold')) {
+    // moveForced 不索敌：拉扯路上绝不脱战，抵达恢复 idle 后才重新自动接战
     const a = acquireTarget(w, u, def.aggro);
     if (a) { u.engageId = a.id; tgt = a; }
   }
@@ -708,7 +728,7 @@ function updateUnit(w: World, u: Unit, dt: number): void {
       tgt = null;
     }
   }
-  const marching = u.order.kind === 'move' || u.order.kind === 'retreat';
+  const marching = u.order.kind === 'move' || u.order.kind === 'moveForced' || u.order.kind === 'retreat';
   if (!triedMove && marching && u.path.length) followPath(w, u, dt, def);
 
   // 自愈：追击清空路径后目标消失，重新向目的地寻路（撤退令的目的地固定为主基地）
@@ -717,8 +737,10 @@ function updateUnit(w: World, u: Unit, dt: number): void {
     if (u.repathT <= 0) {
       const ord = u.order; // 取局部快照，让 TS 能稳定窄化（u.order 在本函数内被改写过）
       const home = w.spawns[u.side];
-      const dx = ord.kind === 'retreat' ? home.x : ord.kind === 'move' ? ord.x : u.x;
-      const dy = ord.kind === 'retreat' ? home.y : ord.kind === 'move' ? ord.y : u.y;
+      const dx = ord.kind === 'retreat' ? home.x
+        : ord.kind === 'move' || ord.kind === 'moveForced' ? ord.x : u.x;
+      const dy = ord.kind === 'retreat' ? home.y
+        : ord.kind === 'move' || ord.kind === 'moveForced' ? ord.y : u.y;
       const p = findPath(w.blocked, u.x, u.y, dx, dy);
       if (p) { u.path = p; u.pathI = 0; }
       else u.order = { kind: 'idle' };
@@ -734,7 +756,7 @@ function updateUnit(w: World, u: Unit, dt: number): void {
       if (moved < 5) {
         let dest: Vec | null = null;
         if (tgt) dest = { x: tgt.x, y: tgt.y };
-        else if (u.order.kind === 'move') dest = { x: u.order.x, y: u.order.y };
+        else if (u.order.kind === 'move' || u.order.kind === 'moveForced') dest = { x: u.order.x, y: u.order.y };
         else if (u.order.kind === 'retreat') dest = { x: w.spawns[u.side].x, y: w.spawns[u.side].y };
         if (dest) {
           const p = findPath(w.blocked, u.x, u.y, dest.x, dest.y);

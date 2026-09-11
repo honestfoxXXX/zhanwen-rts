@@ -44,6 +44,7 @@ export interface BuildingDef {
 export type Order =
   | { kind: 'idle' }
   | { kind: 'move'; x: number; y: number }
+  | { kind: 'moveForced'; x: number; y: number } // 强制移动：沿途不接战，抵达后恢复常态
   | { kind: 'attack'; targetId: number }
   | { kind: 'hold' }    // 原地固守：只打射程内目标，不脱战追击
   | { kind: 'retreat' }; // 撤退：返回己方主基地后转为待命
@@ -117,6 +118,8 @@ export interface SimEvent {
   targetBuilding?: boolean;
   /** shot 事件附带：近战(true)没有弹道，表现层用挥砍弧线而非枪口闪光 */
   melee?: boolean;
+  /** moveMark 事件附带：强制移动(true)用白色落点标记与普通移动区分 */
+  forced?: boolean;
   /** shot 事件附带：攻击来源（表现层选音效：投石三段 / 塔 / 单位） */
   from?: 'unit' | 'tower' | 'catapult';
 }
@@ -129,6 +132,7 @@ type WithTick<T> = T & { tick?: number };
  */
 export type Command =
   | WithTick<{ type: 'move'; side: Side; ids: number[]; x: number; y: number }>
+  | WithTick<{ type: 'moveForced'; side: Side; ids: number[]; x: number; y: number }>
   | WithTick<{ type: 'attack'; side: Side; ids: number[]; targetId: number }>
   | WithTick<{ type: 'hold'; side: Side; ids: number[] }>
   | WithTick<{ type: 'retreat'; side: Side; ids: number[] }>

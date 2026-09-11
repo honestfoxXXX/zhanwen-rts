@@ -36,6 +36,7 @@ export interface HudHooks {
   pickBack: () => void;
   sound: () => string;
   towerUpgrade: () => void;
+  mineUpgrade: () => void;
   music: () => string;
 }
 
@@ -53,6 +54,7 @@ export class Hud {
     goal: $('goal'), alertBanner: $('alertBanner'),
     selchip: $('selchip'), selCount: $('selCount'),
     rowBuild: $('rowBuild'), rowUnit: $('rowUnit'), rowUnit2: $('rowUnit2'), rowCommand: $('rowCommand'), placeRow: $('placeRow'),
+    rowUp: $('rowTower'), btnTowerUp: $('btnTowerUp'), btnMineUp: $('btnMineUp'),
     placeHint: $('placeHint'), placeOk: $('btnPlaceOk'), placeNo: $('btnPlaceNo'),
     toasts: $('toasts'),
     resultTitle: $('resultTitle'), resultStats: $('resultStats'), resultDetail: $('resultDetail'),
@@ -81,6 +83,7 @@ export class Hud {
     $('btnHold').addEventListener('click', () => hooks.hold());
     $('btnRetreat').addEventListener('click', () => hooks.retreat());
     $('btnTowerUp').addEventListener('click', () => hooks.towerUpgrade());
+    $('btnMineUp').addEventListener('click', () => hooks.mineUpgrade());
     $('btnFront').addEventListener('click', () => hooks.pickFront());
     $('btnBack').addEventListener('click', () => hooks.pickBack());
     this.els.placeOk.addEventListener('click', () => hooks.placeOk());
@@ -118,6 +121,24 @@ export class Hud {
   }
 
   get difficulty(): Difficulty { return this.diff; }
+
+  /* ---- 热键入口：与卡槽点击完全同路径，保证可用性与禁用逻辑一致 ---- */
+  buildByHotkey(t: BuildingType): void {
+    const btn = this.buildBtns.get(t);
+    if (btn && !btn.disabled && !btn.classList.contains('hidden')) this.hooks.build(t);
+  }
+  trainByHotkey(idx: number): void {
+    const visible = [...this.trainBtns.values()].filter(b => !b.classList.contains('hidden'));
+    const btn = visible[idx];
+    if (btn && !btn.disabled) btn.click();
+  }
+  selectAll(): void { this.hooks.selectAll(); }
+  rally(): void { this.hooks.rally(); }
+  towerUpgrade(): void { this.hooks.towerUpgrade(); }
+  mineUpgrade(): void { this.hooks.mineUpgrade(); }
+  hold(): void { this.hooks.hold(); }
+  retreat(): void { this.hooks.retreat(); }
+  pause(): void { this.hooks.pause(); }
 
   showMenu(): void {
     this.els.menu.classList.remove('hidden');
@@ -215,7 +236,10 @@ export class Hud {
     this.els.selCount.textContent = `已选 ${sel}`;
     // 有选中部队时才出现固守/撤退，避免卡槽常年被无关按钮挤占
     this.els.rowCommand.classList.toggle('hidden', sel === 0);
+    // 点选自家建筑 → 升级行（箭塔：中原 / 金矿：骑士团）
+    this.updateUpRow(world, ui.buildingSel);
     const modeActive = ui.mode !== 'none' && modeLabel !== null;
+    if (modeActive) this.els.rowUp.classList.add('hidden');
     this.els.rowBuild.classList.toggle('hidden', modeActive);
     this.els.rowUnit.classList.toggle('hidden', modeActive);
     this.els.placeRow.classList.toggle('hidden', !modeActive);
@@ -339,6 +363,34 @@ export class Hud {
     return world.players > 2
       ? `目标：进军，扫平剩余 ${foes} 座城堡`
       : '目标：进军，摧毁敌方城堡';
+  }
+
+  /** 点选自家建筑后的升级行：箭塔（中原）与金矿（骑士团）各自显示等级/费用 */
+  private updateUpRow(world: World, buildingSel: number | null): void {
+    if (buildingSel === null) {
+      this.els.rowUp.classList.add('hidden');
+      return;
+    }
+    const b = world.buildings.find(v => v.id === buildingSel && !v.dead && v.side === 0);
+    if (!b) { this.els.rowUp.classList.add('hidden'); return; }
+    const civ = world.civs[0];
+    if (b.type === 'tower' && civ === 'central' && b.level < 3) {
+      const cost = b.level === 1 ? 150 : 300;
+      this.els.btnTowerUp.textContent = `⬆ 升级箭塔 ${b.level}→${b.level + 1}（${cost}金）`;
+      (this.els.btnTowerUp as HTMLButtonElement).disabled = Math.floor(world.crystals[0]) < cost;
+      this.els.btnTowerUp.classList.remove('hidden');
+      this.els.btnMineUp.classList.add('hidden');
+      this.els.rowUp.classList.remove('hidden');
+    } else if (b.type === 'mine' && civ === 'knight' && (b.mineLevel ?? 0) < 4) {
+      const lv = (b.mineLevel ?? 0);
+      this.els.btnMineUp.textContent = `⬆ 加固金矿 Lv${lv}→Lv${lv + 1}（100金）`;
+      (this.els.btnMineUp as HTMLButtonElement).disabled = Math.floor(world.crystals[0]) < 100;
+      this.els.btnMineUp.classList.remove('hidden');
+      this.els.btnTowerUp.classList.add('hidden');
+      this.els.rowUp.classList.remove('hidden');
+    } else {
+      this.els.rowUp.classList.add('hidden');
+    }
   }
 
   /** 造兵队列剩余时长：排队总时长 + 正在训练的兵营里最久的那个 */

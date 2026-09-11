@@ -93,8 +93,9 @@ export class Effects {
     }
   }
 
-  mark(x: number, y: number): void {
-    this.add({ kind: 'mark', x, y, dur: 0.5, r: 10, color: '#c9a227', big: false, vx: 0, vy: 0 });
+  mark(x: number, y: number, forced = false): void {
+    // 强制移动用奶白标记与普通移动的金色区分，玩家能看出"这次不接战"
+    this.add({ kind: 'mark', x, y, dur: 0.5, r: forced ? 12 : 10, color: forced ? '#f5ecd2' : '#c9a227', big: false, vx: 0, vy: 0 });
   }
 
   builtEvent(x: number, y: number, side: Side): void {

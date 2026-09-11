@@ -29,13 +29,39 @@ export class Camera {
     return this.cssW / 820;
   }
 
+  private zoomTarget: number | null = null;
+  private zoomAnchorCss = { x: 0, y: 0 };
+
   private clampScale(s: number): number {
     return Math.max(this.minScale, Math.min(this.minScale * 8, s));
   }
 
-  /** 回到默认缩放档 */
+  /** 回到默认缩放档（瞬时，用于开局/切图） */
   resetZoom(): void {
+    this.zoomTarget = null;
     this.scale = this.clampScale(this.defaultScale());
+    this.clamp();
+  }
+
+  /** 每帧调用：向缩放目标指数逼近，锚点下的世界坐标保持不动 */
+  update(dt: number): void {
+    if (this.zoomTarget === null) return;
+    const diff = this.zoomTarget - this.scale;
+    if (Math.abs(diff) < 0.02) {
+      this.applyZoomDelta(this.zoomTarget - this.scale);
+      this.zoomTarget = null;
+      return;
+    }
+    this.applyZoomDelta(diff * Math.min(1, dt * 13));
+  }
+
+  private applyZoomDelta(dScale: number): void {
+    const { x: ax, y: ay } = this.zoomAnchorCss;
+    const wx = ax / this.scale + this.x;
+    const wy = ay / this.scale + this.y;
+    this.scale = this.clampScale(this.scale + dScale);
+    this.x = wx - ax / this.scale;
+    this.y = wy - ay / this.scale;
     this.clamp();
   }
 
@@ -53,14 +79,11 @@ export class Camera {
     this.clamp();
   }
 
-  /** 以屏幕锚点为中心缩放：锚点下的世界坐标保持不动 */
+  /** 以屏幕锚点为中心缩放（平滑）：连续滚轮叠加目标倍率，帧内插值逼近 */
   zoomAt(factor: number, sxCss: number, syCss: number): void {
-    const wx = sxCss / this.scale + this.x;
-    const wy = syCss / this.scale + this.y;
-    this.scale = this.clampScale(this.scale * factor);
-    this.x = wx - sxCss / this.scale;
-    this.y = wy - syCss / this.scale;
-    this.clamp();
+    this.zoomAnchorCss = { x: sxCss, y: syCss };
+    const base = this.zoomTarget ?? this.scale;
+    this.zoomTarget = this.clampScale(base * factor);
   }
 
   /** 把世界点置于视口中心 */

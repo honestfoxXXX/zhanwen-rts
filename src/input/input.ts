@@ -9,6 +9,8 @@ export type UIMode = 'none' | 'place' | 'rally' | 'box';
 
 export interface UIState {
   selection: number[];
+  /** 点选的自家建筑（看升级/信息）；与部队选择互斥 */
+  buildingSel: number | null;
   mode: UIMode;
   placing: BuildingType | null;
   ghost: GhostInfo;
@@ -27,6 +29,7 @@ interface PointerRec {
   sx: number; sy: number;
   x: number; y: number;
   button: number;
+  shift: boolean;
   moved: boolean;
   panning: boolean;
   minimap: boolean;
@@ -40,6 +43,10 @@ export class Input {
   private lastTap = { t: 0, id: -1, x: 0, y: 0 };
   private pinch: { dist: number; mx: number; my: number } | null = null;
   private keys = new Set<string>();
+  /** 双指轻点 → 强制移动：第二指落下时记录锚点，快速抬起且未拖动则触发 */
+  private twoTap: { t: number; x: number; y: number; moved: boolean } | null = null;
+  /** 鼠标悬停位置（边缘滚动用），离开画布置空 */
+  private hover: { x: number; y: number } | null = null;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -52,6 +59,7 @@ export class Input {
     canvas.addEventListener('pointermove', e => this.onMove(e));
     canvas.addEventListener('pointerup', e => this.onUp(e));
     canvas.addEventListener('pointercancel', e => this.onUp(e));
+    canvas.addEventListener('pointerleave', () => { this.hover = null; });
     canvas.addEventListener('wheel', e => {
       e.preventDefault();
       const p = this.evPos(e);
@@ -62,15 +70,24 @@ export class Input {
     window.addEventListener('keyup', e => this.keys.delete(e.key));
   }
 
-  /** 每帧调用：键盘双轴平移 */
+  /** 每帧调用：方向键平移 + 鼠标边缘滚动（WASD 让位给 A 攻击移动） */
   update(dt: number): void {
     const speed = 620;
     let dx = 0, dy = 0;
-    if (this.keys.has('a') || this.keys.has('ArrowLeft')) dx -= 1;
-    if (this.keys.has('d') || this.keys.has('ArrowRight')) dx += 1;
-    if (this.keys.has('w') || this.keys.has('ArrowUp')) dy -= 1;
-    if (this.keys.has('s') || this.keys.has('ArrowDown')) dy += 1;
+    if (this.keys.has('ArrowLeft')) dx -= 1;
+    if (this.keys.has('ArrowRight')) dx += 1;
+    if (this.keys.has('ArrowUp')) dy -= 1;
+    if (this.keys.has('ArrowDown')) dy += 1;
     if (dx !== 0 || dy !== 0) this.cam.pan(dx * speed * dt, dy * speed * dt);
+    // 鼠标边缘滚动：桌面端把鼠标推向画面边缘即可平移（触屏无此行为）
+    if (this.hover) {
+      const m = 22;
+      const sp = 520 * dt;
+      let ex = 0, ey = 0;
+      if (this.hover.x < m) ex = -1; else if (this.hover.x > this.cam.cssW - m) ex = 1;
+      if (this.hover.y < m) ey = -1; else if (this.hover.y > this.cam.cssH - m) ey = 1;
+      if (ex !== 0 || ey !== 0) this.cam.pan(ex * sp, ey * sp);
+    }
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -89,12 +106,21 @@ export class Input {
     const p = this.evPos(e);
     const rec: PointerRec = {
       id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y,
-      button: e.button, moved: false, panning: false,
+      button: e.button, shift: e.shiftKey, moved: false, panning: false,
       minimap: isInsideMinimap(p.x, p.y, this.cam.cssW, this.cam.cssH),
       pointerType: e.pointerType,
     };
     this.pointers.set(e.pointerId, rec);
     this.pinch = null; // 手指数变化，捏合基准失效
+    if (this.pointers.size === 2) {
+      const pts = [...this.pointers.values()];
+      this.twoTap = {
+        t: performance.now(),
+        x: (pts[0].x + pts[1].x) / 2,
+        y: (pts[0].y + pts[1].y) / 2,
+        moved: false,
+      };
+    }
     this.canvas.setPointerCapture(e.pointerId);
   }
 
@@ -102,8 +128,11 @@ export class Input {
     const rec = this.pointers.get(e.pointerId);
     const p = this.evPos(e);
     if (!rec) {
-      // 无按键的鼠标移动：放置模式下移动幽灵
-      if (this.ui.mode === 'place' && e.pointerType === 'mouse') this.moveGhost(p.x, p.y);
+      // 无按键的鼠标移动：放置模式下移动幽灵；同时记录悬停位（边缘滚动）
+      if (e.pointerType === 'mouse') {
+        this.hover = p;
+        if (this.ui.mode === 'place') this.moveGhost(p.x, p.y);
+      }
       return;
     }
     const dx = p.x - rec.x, dy = p.y - rec.y;
@@ -116,7 +145,7 @@ export class Input {
       return;
     }
 
-    // 双指捏合：中点位移平移 + 以中点为锚缩放
+    // 双指捏合：中点位移平移 + 以中点为锚缩放；明显移动则取消轻点判定
     if (this.pointers.size >= 2) {
       const pts = [...this.pointers.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -124,6 +153,9 @@ export class Input {
       if (this.pinch && dist > 0) {
         this.cam.pan(mx - this.pinch.mx, my - this.pinch.my);
         this.cam.zoomAt(dist / this.pinch.dist, mx, my);
+        if (this.twoTap && (Math.abs(mx - this.twoTap.x) > TAP_SLOP || Math.abs(my - this.twoTap.y) > TAP_SLOP || Math.abs(dist - this.pinch.dist) > 24)) {
+          this.twoTap.moved = true;
+        }
       }
       this.pinch = { dist, mx, my };
       for (const r of this.pointers.values()) r.moved = true;
@@ -155,6 +187,17 @@ export class Input {
     const world = this.getWorld();
     if (!world || world.gameOver) return;
 
+    // 双指轻点（未拖动、够快）→ 在中点落强制移动令（触屏的拉扯微操）
+    if (this.pointers.size === 0 && this.twoTap) {
+      const tt = this.twoTap;
+      this.twoTap = null;
+      if (!tt.moved && performance.now() - tt.t < 320 && !rec.minimap) {
+        const wp = this.cam.screenToWorld(tt.x, tt.y);
+        this.orderAt(world, wp.x, wp.y, true);
+        return;
+      }
+    }
+
     if (rec.minimap) {
       if (!rec.moved) jumpCameraTo(p.x, p.y, this.cam); // 单击小地图跳转
       return;
@@ -177,7 +220,7 @@ export class Input {
 
     if (!rec.moved) {
       const rightClick = rec.button === 2;
-      this.onTap(world, p.x, p.y, rightClick, rec.pointerType);
+      this.onTap(world, p.x, p.y, rightClick, rec.shift, rec.pointerType);
     }
   }
 
@@ -213,7 +256,7 @@ export class Input {
     }
   }
 
-  private onTap(world: World, sx: number, sy: number, rightClick: boolean, pointerType: string): void {
+  private onTap(world: World, sx: number, sy: number, rightClick: boolean, shift: boolean, pointerType: string): void {
     const wp = this.cam.screenToWorld(sx, sy);
 
     // 放置模式
@@ -240,15 +283,24 @@ export class Input {
       return;
     }
 
-    // 右键：命令
+    // A + 左键 = 攻击移动：忽略点选，直接下令（移动沿途自动接战，等于攻击移动语义）
+    if (this.keys.has('a') && !rightClick) {
+      this.ui.buildingSel = null;
+      this.orderAt(world, wp.x, wp.y, false);
+      return;
+    }
+
+    // 右键：命令（Shift+右键 = 强制移动，沿途不接战）
     if (rightClick) {
-      this.orderAt(world, wp.x, wp.y);
+      this.ui.buildingSel = null;
+      this.orderAt(world, wp.x, wp.y, shift);
       return;
     }
 
     // 点选单位
     const u = pickUnitAt(world, wp.x, wp.y, null, this.pickTol());
     if (u && u.side === 0) {
+      this.ui.buildingSel = null;
       const now = performance.now();
       const isDouble = now - this.lastTap.t < 350 && this.lastTap.id === u.id &&
         Math.hypot(sx - this.lastTap.x, sy - this.lastTap.y) < 28;
@@ -259,7 +311,7 @@ export class Input {
           v.x >= this.cam.x && v.x <= this.cam.x + this.cam.viewW &&
           v.y >= this.cam.y && v.y <= this.cam.y + this.cam.viewH);
         this.ui.selection = same.map(v => v.id);
-        this.hooks.toast(`已选中 ${same.length} 个${u.type === 'infantry' ? '步兵' : u.type === 'archer' ? '弓手' : '重装'}`);
+        this.hooks.toast(`已选中 ${same.length} 个${UNIT_NAME[u.type] ?? '部队'}`);
       } else {
         this.ui.selection = [u.id];
       }
@@ -272,10 +324,9 @@ export class Input {
       return;
     }
 
-    // 点自家建筑：单击看信息，双击兵营则单独给它设集结点
+    // 点自家建筑：选中（看信息/升级），双击兵营则单独给它设集结点
     const b = pickBuildingAt(world, wp.x, wp.y);
     if (b && b.side === 0) {
-      const name = BUILDING_DEFS[b.type].name;
       const now = performance.now();
       // 用负 id 作为建筑的双击键，避免与单位 id 撞上
       const isDouble = now - this.lastTap.t < 350 && this.lastTap.id === -b.id &&
@@ -288,7 +339,8 @@ export class Input {
         return;
       }
       this.lastTap = { t: now, id: -b.id, x: sx, y: sy };
-      this.hooks.toast(`${name} ${Math.max(0, Math.ceil(b.hp))}/${b.maxHp}`);
+      this.ui.selection = [];
+      this.ui.buildingSel = b.id;
       return;
     }
     if (b && b.side !== 0 && this.ui.selection.length) {
@@ -296,19 +348,25 @@ export class Input {
       return;
     }
 
-    // 空地 → 移动令
-    if (!u && !b) this.orderAt(world, wp.x, wp.y);
+    // 空地：清建筑选中；有部队选中则移动，否则仅取消
+    this.ui.buildingSel = null;
+    if (!u && !b && this.ui.selection.length) this.orderAt(world, wp.x, wp.y, false);
   }
 
-  private orderAt(world: World, wx: number, wy: number): void {
+  /** 下令：普通移动（沿途自动接战、阵型分层）/ 强制移动（精确落点、完全不接战） */
+  private orderAt(world: World, wx: number, wy: number, forced: boolean): void {
     if (!this.ui.selection.length) return;
-    // 优先打点中的敌方单位，否则视为移动令（点中己方单位也算移动）
-    const enemy = pickUnitAt(world, wx, wy, null);
-    if (enemy && enemy.side !== 0) {
-      this.hooks.command({ type: 'attack', side: 0, ids: [...this.ui.selection], targetId: enemy.id });
-      return;
+    // 优先打点中的敌方单位（强制移动不做集火，要的就是走位）
+    if (!forced) {
+      const enemy = pickUnitAt(world, wx, wy, null);
+      if (enemy && enemy.side !== 0) {
+        this.hooks.command({ type: 'attack', side: 0, ids: [...this.ui.selection], targetId: enemy.id });
+        return;
+      }
     }
-    this.hooks.command({ type: 'move', side: 0, ids: [...this.ui.selection], x: wx, y: wy });
+    this.hooks.command(forced
+      ? { type: 'moveForced', side: 0, ids: [...this.ui.selection], x: wx, y: wy }
+      : { type: 'move', side: 0, ids: [...this.ui.selection], x: wx, y: wy });
   }
 
   /** HUD 调用：确认建造 */
@@ -334,5 +392,12 @@ export class Input {
 
   clearSelection(): void {
     this.ui.selection = [];
+    this.ui.buildingSel = null;
   }
 }
+
+/** 兵种中文名（toast 用） */
+const UNIT_NAME: Record<string, string> = {
+  infantry: '步兵', archer: '弓手', heavy: '重装', pikeman: '长枪兵', knight: '骑士',
+  catapult: '投石车', champion: '近卫军', horsearcher: '游骑兵', healer: '牧师',
+};
