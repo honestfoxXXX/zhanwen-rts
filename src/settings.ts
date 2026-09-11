@@ -10,6 +10,7 @@ export interface GameSettings {
   shake: boolean;   // 屏幕震动
   edgeScroll: boolean; // 鼠标边缘滚动
   goalChain: boolean;  // 新手目标链
+  dayNight: boolean;   // 昼夜循环
 }
 
 const KEY = 'zw_settings_v1';
@@ -21,6 +22,7 @@ const DEFAULTS: GameSettings = {
   shake: true,
   edgeScroll: true,
   goalChain: true,
+  dayNight: true,
 };
 
 export const settings: GameSettings = (() => {

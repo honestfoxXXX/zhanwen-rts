@@ -167,11 +167,20 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
   const midX = MAP_W / 2, midY = MAP_H / 2;
   const civAssign = civs ?? DEFAULT_CIVS[players];
 
+  // 战雾状态：玩家已探索/当前视野 + 各 AI 的"见过建筑"标记
+  const explored = new Uint8Array(COLS * ROWS);
+  const visible = new Uint8Array(COLS * ROWS);
+  const aiSeen: Uint8Array[] = [];
+  for (let i = 0; i < players; i++) aiSeen.push(new Uint8Array(512));
+
   const w: World = {
     tick: 0,
     time: 0,
     seed,
     rngState: seed | 0,
+    explored,
+    visible,
+    aiSeen,
     difficulty,
     map: mapIndex % MAPS.length,
     players,
@@ -219,7 +228,10 @@ export function createWorld(difficulty: World['difficulty'], seed: number, mapIn
   };
 
   for (let s = 0; s < players; s++) mkBuilding(w, s as Side, 'hq', w.spawns[s].x, w.spawns[s].y, true);
-  return w;
+    // 开局：己方主基地周边已探索；所有 HQ 位置各方默认知晓
+  for (const sp of w.spawns) stampSight(w, sp.x, sp.y, 260, true);
+  for (const b of w.buildings) if (b.type === 'hq') for (let si = 1; si < w.players; si++) w.aiSeen[si][b.id] = 1;
+return w;
 }
 
 function mkBuilding(w: World, side: Side, type: BuildingType, x: number, y: number, instant = false): Building {
@@ -961,6 +973,78 @@ function updateBuildings(w: World, dt: number): void {
   }
 }
 
+/* ---------------- 战争迷雾 ---------------- */
+
+/** 以 (x,y) 为圆心、R 为半径点亮 tile：always=true 写 explored，visible 每次重算时都写 */
+function stampSight(w: World, x: number, y: number, r: number, always: boolean): void {
+  const tx0 = Math.max(0, Math.floor((x - r) / TILE));
+  const tx1 = Math.min(COLS - 1, Math.floor((x + r) / TILE));
+  const ty0 = Math.max(0, Math.floor((y - r) / TILE));
+  const ty1 = Math.min(ROWS - 1, Math.floor((y + r) / TILE));
+  const r2 = r * r;
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const dx = (tx + 0.5) * TILE - x, dy = (ty + 0.5) * TILE - y;
+      if (dx * dx + dy * dy <= r2) {
+        const idx = ty * COLS + tx;
+        w.visible[idx] = 1;
+        if (always) w.explored[idx] = 1;
+      }
+    }
+  }
+}
+
+/** 每 8 tick 重算可见性 + 探索 + AI 见过标记。确定性：只依赖实体位置 */
+export function updateFog(w: World): void {
+  w.visible.fill(0);
+  for (const u of w.units) {
+    if (u.dead || u.side !== 0) continue;
+    const sight = UNIT_DEFS[u.type].aggro + 70;
+    stampSight(w, u.x, u.y, sight, true);
+    stampSight(w, u.x, u.y, sight, false);
+  }
+  for (const b of w.buildings) {
+    if (b.dead || b.side !== 0) continue;
+    const sight = b.type === 'tower' ? 280 : b.half + 60;
+    stampSight(w, b.x, b.y, sight, true);
+    stampSight(w, b.x, b.y, sight, false);
+  }
+}
+
+/** 每 30 tick：AI 各方把视野内(~260)的敌方建筑记为"见过" */
+function updateAiSeen(w: World): void {
+  for (let side = 1; side < w.players; side++) {
+    const seen = w.aiSeen[side];
+    if (!seen) continue;
+    // 主动情报：单位 260 内亲眼所见
+    for (const u of w.units) {
+      if (u.dead || u.side !== side) continue;
+      for (const b of w.buildings) {
+        if (b.dead || b.side === side) continue;
+        const dx = u.x - b.x, dy = u.y - b.y;
+        if (dx * dx + dy * dy <= 260 * 260) seen[b.id] = 1;
+      }
+    }
+    // 邻近被动情报：自家建筑 650 内的敌方建筑视为已知。
+    // 前沿矿藏贴脸开建不可能不被注意；同时避免 AI 因看不见而给玩家真空期。
+    for (const mine of w.buildings) {
+      if (mine.dead || mine.side !== side) continue;
+      for (const b of w.buildings) {
+        if (b.dead || b.side === side) continue;
+        const dx = mine.x - b.x, dy = mine.y - b.y;
+        if (dx * dx + dy * dy <= 650 * 650) seen[b.id] = 1;
+      }
+    }
+  }
+}
+
+/** tile 是否在玩家当前视野内（表现层藏敌用） */
+export function isVisibleAt(w: World, x: number, y: number): boolean {
+  const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+  if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
+  return w.visible[ty * COLS + tx] === 1;
+}
+
 /* ---------------- 清理与胜负 ---------------- */
 
 function cleanup(w: World): void {
@@ -1029,6 +1113,8 @@ export function stepWorld(w: World, dt: number): void {
   if (w.gameOver) return;
   w.time += dt;
   w.tick++;
+  if (w.tick % 8 === 0) updateFog(w);
+  if (w.tick % 30 === 0) updateAiSeen(w);
   aiThink(w, dt);
   updateEconomy(w, dt);
   updateProduction(w, dt);
@@ -1107,6 +1193,8 @@ export function hashWorld(w: World): number {
   mix(w.tick);
   mixF(w.time);
   mix(w.rngState);
+  // 战雾 explored 抽样混合（每 37 字节取 1）：由实体位置决定，确定可复现
+  if (w.explored) for (let i = 0; i < w.explored.length; i += 37) mix(w.explored[i]);
   for (let s = 0; s < w.players; s++) { mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]); }
   for (const u of w.units) {
     if (u.dead) continue;
@@ -1138,6 +1226,7 @@ interface WorldSnapshot {
   gameOver: World['gameOver']; stats: World['stats']; ai: World['ai'];
   crown: World['crown'];
   rallyAuto: boolean[];
+  explored?: number[]; visible?: number[]; aiSeen?: number[][];
   civs: CivId[];
 }
 
@@ -1148,6 +1237,8 @@ export function serializeWorld(w: World): string {
     units: w.units, buildings: w.buildings, nodes: w.nodes, projectiles: w.projectiles,
     crystals: w.crystals, popUsed: w.popUsed, income: w.income, queue: w.queue,
     rally: w.rally, blocked: Array.from(w.blocked), nextId: w.nextId,
+    explored: Array.from(w.explored), visible: Array.from(w.visible),
+    aiSeen: w.aiSeen.map(a => Array.from(a)),
     gameOver: w.gameOver, stats: w.stats, ai: w.ai, crown: w.crown, rallyAuto: w.rallyAuto, civs: [...w.civs],
   };
   return JSON.stringify(s);
@@ -1162,6 +1253,8 @@ export function deserializeWorld(json: string): World {
     units: s.units, buildings: s.buildings, nodes: s.nodes, projectiles: s.projectiles,
     crystals: s.crystals, popUsed: s.popUsed, income: s.income, queue: s.queue,
     rally: s.rally, blocked: Uint8Array.from(s.blocked), index: new Map(),
+    explored: Uint8Array.from(s.explored ?? []), visible: Uint8Array.from(s.visible ?? []),
+    aiSeen: (s.aiSeen ?? []).map((a: number[]) => Uint8Array.from(a)),
     nextId: s.nextId, events: [], gameOver: s.gameOver, stats: s.stats, ai: s.ai, crown: s.crown, rallyAuto: s.rallyAuto, civs: s.civs,
   };
   for (const u of w.units) w.index.set(u.id, u);

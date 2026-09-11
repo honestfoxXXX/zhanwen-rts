@@ -3,8 +3,13 @@ import type { World } from '../core/types';
 import type { Camera } from './camera';
 import { currentMap } from './renderer';
 import { SIDE_FILL } from './shapes';
+import { isVisibleAt } from '../core/sim';
+import { COLS, ROWS } from '../core/config';
 
 const SIDE = SIDE_FILL;
+
+/** 小地图战雾缓存画布 */
+const fogTile = { cv: document.createElement('canvas'), key: '', built: false, tick: -1 };
 
 export interface MiniRect { x: number; y: number; w: number; h: number }
 
@@ -105,14 +110,36 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
     g.fillRect(r.x + n.x * sx - 1.2, r.y + n.y * sy - 1.2, 2.4, 2.4);
   }
 
-  // 建筑
+  // 战雾：未探索区域压暗（tile 小画布缓存，每 20 帧重绘一次）
+  if (world.explored) {
+    const key = `${r.w}x${r.h}`;
+    if (!fogTile.key || fogTile.key !== key) { fogTile.cv.width = COLS; fogTile.cv.height = ROWS; fogTile.key = key; }
+    if (world.tick - fogTile.tick > 20 || !fogTile.built) {
+      const fctx = fogTile.cv.getContext('2d')!;
+      const img = fctx.createImageData(COLS, ROWS);
+      for (let i = 0; i < COLS * ROWS; i++) {
+        const o = i * 4;
+        img.data[o] = 10; img.data[o + 1] = 14; img.data[o + 2] = 10;
+        img.data[o + 3] = world.visible[i] ? 0 : world.explored[i] ? 110 : 215;
+      }
+      fctx.putImageData(img, 0, 0);
+      fogTile.built = true;
+      fogTile.tick = world.tick;
+    }
+    g.imageSmoothingEnabled = true;
+    g.drawImage(fogTile.cv, r.x, r.y, r.w, r.h);
+  }
+
+  // 建筑（战雾：视野外的敌方建筑不点灯）
   for (const b of world.buildings) {
+    if (b.side !== 0 && !isVisibleAt(world, b.x, b.y)) continue;
     g.fillStyle = SIDE[b.side];
     g.fillRect(r.x + (b.x - b.half) * sx, r.y + (b.y - b.half) * sy, Math.max(2, b.half * 2 * sx), Math.max(2, b.half * 2 * sy));
   }
 
   // 单位
   for (const u of world.units) {
+    if (u.side !== 0 && !isVisibleAt(world, u.x, u.y)) continue;
     g.fillStyle = SIDE[u.side];
     g.fillRect(r.x + u.x * sx - 0.8, r.y + u.y * sy - 0.8, 1.6, 1.6);
   }

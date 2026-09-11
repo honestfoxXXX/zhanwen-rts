@@ -72,6 +72,8 @@ export interface MapDef {
   spawns: SpawnDef[];
   /** 可选河流（可多条），参与寻路阻挡 */
   rivers?: RiverDef[];
+  /** 地貌主题：决定 buildBackground 的整套地面配色 */
+  theme?: 'meadow' | 'loess' | 'autumn' | 'rock' | 'moor';
 }
 
 /**
@@ -191,6 +193,7 @@ function pair2Rivers(r: RiverDef): RiverDef[] {
 export const MAPS: MapDef[] = [
   {
     id: 'gate',
+    theme: 'rock',
     name: '中央关隘',
     brief: '对角布局，中央隘口收窄 —— 控住中路就控住对方的经济动脉',
     players: 2,
@@ -206,6 +209,7 @@ export const MAPS: MapDef[] = [
   },
   {
     id: 'open',
+    theme: 'meadow',
     name: '开阔平原',
     brief: '几乎没有掩体，机动与包抄决定胜负 —— 小心被绕后偷矿',
     players: 2,
@@ -218,6 +222,7 @@ export const MAPS: MapDef[] = [
   },
   {
     id: 'rich',
+    theme: 'autumn',
     name: '富矿之争',
     brief: '中央矿脉密布 —— 谁吃下中心，谁就吃下整场比赛',
     players: 2,
@@ -240,6 +245,7 @@ export const MAPS: MapDef[] = [
   },
   {
     id: 'tri',
+    theme: 'moor',
     name: '三足鼎立',
     brief: '三方等距鼎立，岩脊分割三路 —— 控住隘口就掌握节奏',
     players: 3,
@@ -261,6 +267,7 @@ export const MAPS: MapDef[] = [
   },
   {
     id: 'tribrawl',
+    theme: 'loess',
     name: '中原逐鹿',
     brief: '岩石稀疏的等距三角 —— 没有地形可依，扩张速度决定一切',
     players: 3,

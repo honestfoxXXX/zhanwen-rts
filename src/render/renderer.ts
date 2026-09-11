@@ -1,7 +1,6 @@
 import {
-  BUILDING_DEFS, COLS, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
+  BUILDING_DEFS, COLS, CROWN_WINDOW, MAP_H, MAPS, MAP_W, ROWS, TILE, UNIT_DEFS,
 } from '../core/config';
-import { CROWN_WINDOW } from '../core/config';
 import type { DenyReason } from '../core/types';
 import type { MapDef } from '../core/config';
 import type { Building, CivId, Unit, UnitType, World } from '../core/types';
@@ -10,6 +9,8 @@ import { draw as drawMinimap } from './minimap';
 import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SHAPES } from './shapes';
 import { getSprite } from './spriteCache';
 import { flashOf } from './feedback';
+import { settings } from '../settings';
+import { isVisibleAt } from '../core/sim';
 import type { BuildingType, Side } from '../core/types';
 
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
@@ -70,6 +71,33 @@ function initGrain(): void {
 
 // 3840² 全分辨率画布在 iOS 上逼近内存红线；0.75 分辨率（2880²）是清晰度与内存的平衡点
 const BG_SCALE = 0.75;
+
+// 战雾覆盖层：tile 级 ImageData 上采样到世界尺寸（双线性平滑边缘）
+let fogCanvas: HTMLCanvasElement | null = null;
+let fogCtx: CanvasRenderingContext2D | null = null;
+let fogImg: ImageData | null = null;
+
+function drawFog(sctx: CanvasRenderingContext2D, w: World): void {
+  if (!fogCanvas) {
+    fogCanvas = document.createElement('canvas');
+    fogCanvas.width = COLS;
+    fogCanvas.height = ROWS;
+    fogCtx = fogCanvas.getContext('2d');
+    fogImg = fogCtx!.createImageData(COLS, ROWS);
+  }
+  const img = fogImg!;
+  const d = img.data;
+  for (let i = 0; i < COLS * ROWS; i++) {
+    const o = i * 4;
+    d[o] = 7; d[o + 1] = 11; d[o + 2] = 8;
+    d[o + 3] = w.visible[i] ? 0 : w.explored[i] ? 96 : 205;
+  }
+  fogCtx!.putImageData(img, 0, 0);
+  sctx.save();
+  sctx.imageSmoothingEnabled = true;
+  sctx.drawImage(fogCanvas, 0, 0, MAP_W, MAP_H);
+  sctx.restore();
+}
 
 // 河流采样（A1 绘制时填充；运行时用于水面闪烁）
 const riverSamples: { x: number; y: number; a: number }[] = [];
@@ -139,6 +167,15 @@ function drawCloudShadows(g: CanvasRenderingContext2D, time: number): void {
   }
 }
 
+/** D3 地貌主题：top/mid/bot 基底渐变 + blobA/blobB 色斑两族色相 */
+const THEMES: Record<string, { top: string; mid: string; bot: string; blobA: string; blobB: string }> = {
+  meadow: { top: '#3d5732', mid: '#33492b', bot: '#2a3f24', blobA: '122,158,78', blobB: '122,88,52' },
+  loess: { top: '#5d5138', mid: '#4f452f', bot: '#423a27', blobA: '166,146,88', blobB: '124,98,58' },
+  autumn: { top: '#5a4d2e', mid: '#4d422a', bot: '#3e3522', blobA: '172,132,62', blobB: '122,82,46' },
+  rock: { top: '#4a4d4a', mid: '#3e4240', bot: '#333634', blobA: '118,128,118', blobB: '88,94,88' },
+  moor: { top: '#39493c', mid: '#31403a', bot: '#29362f', blobA: '100,142,112', blobB: '92,82,56' },
+};
+
 /** 预渲染静态地面（地貌装饰 + 岩石 + 国境线 + 基地区）。换地图需要重新调用 */
 export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -148,11 +185,12 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   g.scale(BG_SCALE, BG_SCALE);
   // 以下全部使用世界坐标绘制
 
-  // 基底：垂直光照渐变（北亮南暗），苔绿草原
+  // 基底：按地图主题配色（D3 地貌差异化），保持"北亮南暗"光照
+  const theme = THEMES[map.theme ?? 'meadow'];
   const base = g.createLinearGradient(0, 0, 0, MAP_H);
-  base.addColorStop(0, '#3d5732');
-  base.addColorStop(0.45, '#33492b');
-  base.addColorStop(1, '#2a3f24');
+  base.addColorStop(0, theme.top);
+  base.addColorStop(0.45, theme.mid);
+  base.addColorStop(1, theme.bot);
   g.fillStyle = base;
   g.fillRect(0, 0, MAP_W, MAP_H);
 
@@ -167,12 +205,12 @@ export function buildBackground(map: MapDef = MAPS[0]): HTMLCanvasElement {
   // ---- 确定性地面装饰（大块色斑 / 暗斑 / 草茎 / 碎石 / 野花）----
   let seed = 20260902;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  // 大块色斑：两种色相（草甸 / 褐土），让地面有"地貌"而非纯色
+  // 大块色斑：主题两族色相，让地面有"地貌"而非纯色
   for (let i = 0; i < 150; i++) {
     const x = rnd() * MAP_W, y = rnd() * MAP_H, r = 60 + rnd() * 150;
     g.fillStyle = i % 2 === 0
-      ? `rgba(122,158,78,${0.04 + rnd() * 0.03})`
-      : `rgba(122,88,52,${0.055 + rnd() * 0.03})`;
+      ? `rgba(${theme.blobA},${0.04 + rnd() * 0.03})`
+      : `rgba(${theme.blobB},${0.055 + rnd() * 0.03})`;
     g.beginPath();
     g.ellipse(x, y, r, r * (0.5 + rnd() * 0.3), rnd() * Math.PI, 0, Math.PI * 2);
     g.fill();
@@ -969,12 +1007,18 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
 
   // 建筑（按 y 排序）
   const buildings = [...w.buildings].sort((a, b) => a.y - b.y);
-  for (const b of buildings) drawBuilding(sctx, b, w.time, w.civs[b.side]);
+  for (const b of buildings) {
+    if (b.side !== 0 && !isVisibleAt(w, b.x, b.y)) continue;
+    drawBuilding(sctx, b, w.time, w.civs[b.side]);
+  }
 
-  // 单位（按 y 排序）
+  // 单位（按 y 排序）；战争迷雾：视野外的敌方单位不画
   const sel = new Set(ui.selection);
   const units = [...w.units].sort((a, b) => a.y - b.y);
-  for (const u of units) drawUnit(sctx, u, w.time, sel.has(u.id));
+  for (const u of units) {
+    if (u.side !== 0 && !isVisibleAt(w, u.x, u.y)) continue;
+    drawUnit(sctx, u, w.time, sel.has(u.id));
+  }
 
   // 弹道：箭矢 / 炮弹（高度弧线 + 地面影子）
   for (const p of w.projectiles) {
@@ -1052,6 +1096,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       sctx.globalAlpha = 1;
     }
   }
+  // 战雾压暗（在实体之上、特效之下：特效是全局反馈不该被雾吃掉）
+  drawFog(sctx, w);
+
   // 放置幽灵（世界空间，画在场景层上，位于特效之下）
   if (ui.ghost) {
     const gh = ui.ghost;
@@ -1078,6 +1125,23 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
 
   // ---- 后处理：场景合成到屏幕 ----
   ctx.drawImage(sceneCanvas!, 0, 0);
+  // D2 昼夜循环：10 分钟一昼夜。黄昏暖橙 → 夜晚冷蓝 → 黎明回暖（设置可关）
+  if (settings.dayNight) {
+    const phase = (w.time % 600) / 600;
+    let dusk = 0, night = 0;
+    if (phase < 0.42) { /* 白昼 */ }
+    else if (phase < 0.52) { dusk = (phase - 0.42) / 0.1; }
+    else if (phase < 0.9) { dusk = 1; night = Math.min(1, (phase - 0.52) / 0.16); }
+    else if (phase < 1.0) { night = 1 - (phase - 0.9) / 0.1; dusk = night; }
+    if (dusk > 0) {
+      ctx.fillStyle = `rgba(255,140,60,${0.1 * dusk})`;
+      ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+    }
+    if (night > 0) {
+      ctx.fillStyle = `rgba(14,20,52,${0.3 * night})`;
+      ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+    }
+  }
 
   // 暗角
   const key = `${cam.cssW}x${cam.cssH}`;

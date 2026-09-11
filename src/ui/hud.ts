@@ -114,7 +114,7 @@ export class Hud {
       el.value = String(settings[key]);
       el.addEventListener('input', () => { settings[key] = Number(el.value); applyVol(); saveSettings(); });
     };
-    const bindBool = (id: string, key: 'shake' | 'edgeScroll' | 'goalChain') => {
+    const bindBool = (id: string, key: 'shake' | 'edgeScroll' | 'goalChain' | 'dayNight') => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       if (!el) return;
       el.checked = settings[key];
@@ -126,6 +126,7 @@ export class Hud {
     bindBool('setShake', 'shake');
     bindBool('setEdge', 'edgeScroll');
     bindBool('setChain', 'goalChain');
+    bindBool('setDayNight', 'dayNight');
     const dmgEl = document.getElementById('setDmg') as HTMLInputElement | null;
     if (dmgEl) {
       dmgEl.checked = damageNumbersOn();
