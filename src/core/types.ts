@@ -37,8 +37,6 @@ export interface BuildingDef {
   half: number; // 半宽（世界单位），建筑均为 half*2 见方
   income: number;
   weapon: WeaponDef | null;
-  /** 科技档解锁：建成后允许训练该档兵种（军械库 2 / 攻城工坊 3） */
-  unlocks?: 2 | 3;
 }
 
 export type Order =

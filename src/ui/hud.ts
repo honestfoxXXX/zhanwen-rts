@@ -1,4 +1,5 @@
-import { BUILDING_DEFS, CIVS, CROWN_WINDOW, DIFFICULTY, NODES, POP_CAP, UNIT_DEFS } from '../core/config';
+import { BUILDING_DEFS, CIVS, CROWN_WINDOW, DIFFICULTY, NODES, UNIT_DEFS } from '../core/config';
+import { popCapOf, trainCost } from '../core/sim';
 import { settings, saveSettings } from '../settings';
 import { setDamageNumbers, damageNumbersOn } from '../render/feedback';
 import { setVolumes } from '../sound';
@@ -19,12 +20,6 @@ const DENY_TEXT: Record<string, string> = {
 
 /** 阵营中文名，结算战报用 */
 const SIDE_LABEL = ['蓝衫军', '红衫军', '金衫军'];
-
-/** 兵种中文名 */
-const UNIT_NAME: Record<string, string> = {
-  infantry: '步兵', archer: '弓手', heavy: '重装', pikeman: '长枪兵', knight: '骑士',
-  catapult: '投石车', champion: '近卫军', horsearcher: '游骑兵', healer: '牧师',
-};
 
 export interface HudHooks {
   start: (d: Difficulty, players: number) => void;
@@ -228,7 +223,7 @@ export class Hud {
     const rows: [string, string][] = [['歼灭敌军', String(st.kills[0])]];
     for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}阵亡`, String(st.kills[s])]);
     rows.push(['累计造兵', String(st.trained[0])]);
-    rows.push([`峰值兵力`, `${st.peakPop[0]}/${POP_CAP}`]);
+    rows.push([`峰值兵力`, `${st.peakPop[0]}/${popCapOf(world, 0)}`]);
     rows.push(['黄金总收入', String(Math.round(st.earned[0]))]);
     for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}总收入`, String(Math.round(st.earned[s]))]);
     this.els.resultDetail.textContent = '';
@@ -356,7 +351,7 @@ export class Hud {
           div.className = 'grp';
           const frac = g.max ? g.hp / g.max : 0;
           div.innerHTML =
-            `<div class="nm">${UNIT_NAME[t] ?? t}<b>×${g.n}</b></div>` +
+            `<div class="nm">${UNIT_DEFS[t as UnitType].name}<b>×${g.n}</b></div>` +
             `<div class="st">攻${d.damage} · 程${d.range} · 速${d.speed}</div>` +
             `<div class="hpbar"><i style="width:${(frac * 100).toFixed(0)}%;background:${frac > 0.6 ? '#9db86a' : frac > 0.3 ? '#d9a24a' : '#f87171'}"></i></div>`;
           this.paintIconAt(div, 'unit', t as UnitType);
@@ -371,7 +366,7 @@ export class Hud {
       const b = world.buildings.find(v => v.id === ui.buildingSel && !v.dead && v.side === 0);
       if (!b) { panel.classList.add('hidden'); this.selPanelKey = ''; return; }
       const d = BUILDING_DEFS[b.type];
-      const q = b.trainType ? `出兵中：${UNIT_NAME[b.trainType] ?? ''} ${Math.ceil(b.trainT)}s` : (world.queue[0].length ? '排队中' : '空闲');
+      const q = b.trainType ? `出兵中：${UNIT_DEFS[b.trainType].name} ${Math.ceil(b.trainT)}s` : (world.queue[0].length ? '排队中' : '空闲');
       const lv = b.type === 'tower' ? ` · Lv${b.level}` : b.type === 'mine' && (b.mineLevel ?? 0) > 0 ? ` · 加固 Lv${b.mineLevel}` : '';
       const key = `b:${b.id}:${Math.ceil(b.hp)}:${b.trainType ?? ''}:${Math.ceil(b.trainT)}`;
       if (key !== this.selPanelKey) {
@@ -425,7 +420,7 @@ export class Hud {
       const cnt = d.dmgBonus
         ? Object.entries(d.dmgBonus)
             .filter(([k]) => k !== 'building')
-            .map(([k, v]) => `${UNIT_NAME[k]}×${v}`)
+            .map(([k, v]) => `${UNIT_DEFS[k as UnitType].name}×${v}`)
             .join(' ')
         : '';
       const unlock = d.tier === 2 ? '<br>需军械库' : d.tier === 3 ? '<br>需攻城工坊' : '';
@@ -448,7 +443,7 @@ export class Hud {
     }
     html += '</table>';
     // 克制三角说明
-    html += '<h3>克 制</h3><p style="color:#d9cdb0">弓手 › 重装 › 步兵 › 弓手 · 长枪克骑士 · 投石车拆建筑（3×）· 近卫军披甲（减伤 28%）</p>';
+    html += '<h3>克 制</h3><p style="color:#d9cdb0">弓手 › 重装 › 步兵 › 弓手 · 长枪克骑士/近卫军 · 投石车拆建筑（3×）· 近卫军披甲（减伤 28%）</p>';
     body.innerHTML = html;
   }
 
@@ -496,7 +491,7 @@ export class Hud {
     const cr = Math.floor(world.crystals[0]);
     this.els.crystal.textContent = String(cr);
     this.els.income.textContent = `+${world.income[0].toFixed(0)}/s`;
-    this.els.pop.textContent = `${world.popUsed[0]}/${POP_CAP}`;
+    this.els.pop.textContent = `${world.popUsed[0]}/${popCapOf(world, 0)}`;
 
     const mm = Math.floor(world.time / 60), ss = Math.floor(world.time % 60);
     this.els.time.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
@@ -533,26 +528,33 @@ export class Hud {
     if (farmCard) farmCard.classList.toggle('hidden', !isCentral);
     for (const [t, btn] of this.buildBtns) {
       const d = BUILDING_DEFS[t];
-      let ok = cr >= d.cost;
+      const cost = t === 'mine' ? CIVS[world.civs[0]].mineCost : d.cost;
+      let ok = cr >= cost;
       if (t === 'mine' && !world.nodes.some(n => n.mineId === null)) ok = false;
       if (t === 'farm' && !isCentral) continue;
       btn.disabled = !ok;
+      const em = btn.querySelector('em');
+      if (em) em.textContent = String(cost);
     }
     const hasSmithy = world.buildings.some(b => b.side === 0 && b.type === 'smithy' && !b.dead && b.buildT <= 0);
     const hasWorkshop = world.buildings.some(b => b.side === 0 && b.type === 'workshop' && !b.dead && b.buildT <= 0);
     this.els.rowUnit2?.classList.toggle('hidden', !(hasSmithy || hasWorkshop));
     for (const [t, btn] of this.trainBtns) {
       const d = UNIT_DEFS[t];
-      let ok = cr >= d.cost && world.popUsed[0] + d.pop <= POP_CAP;
+      let ok = cr >= trainCost(world, 0, t) && world.popUsed[0] + d.pop <= popCapOf(world, 0);
       const locked = (d.tier === 2 && !hasSmithy) || (d.tier === 3 && !hasWorkshop);
       if (locked) ok = false;
       btn.disabled = !ok;
       btn.classList.toggle('locked', locked);
-      // 文明差异：游牧弓手位替换为游骑兵（互斥显隐）
+      // 文明差异：游牧弓手位替换为游骑兵；牧师是骑士团专属（互斥显隐）
       if (t === 'archer' || t === 'horsearcher') {
         const show = (t === 'horsearcher') === (world.civs[0] === 'nomad');
         btn.classList.toggle('hidden', !show);
       }
+      if (t === 'healer') btn.classList.toggle('hidden', world.civs[0] !== 'knight');
+      // 卡面造价显示文明修正后的实际值（骑士团 +15%）
+      const em = btn.querySelector('em');
+      if (em) em.textContent = String(trainCost(world, 0, t));
       const q = world.queue[0].filter(v => v === t).length;
       let badge = btn.querySelector('.badge');
       if (q > 0) {

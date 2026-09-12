@@ -28,7 +28,9 @@ export const UNIT_DEFS: Record<UnitType, import('./types').UnitDef> = {
   // T2（军械库）：长枪兵反骑 / 骑士快速袭扰。
   // 数值红线修正：dps/人口必须高于 T1 步兵（10）——"贵=换更少的量"只体现在 dps/金上，
   // 否则人口顶满后高阶兵反而亏，升本没有意义（实测教训：初版 T2/T3 dps/人口全线 < 10）。
-  pikeman: { name: '长枪兵', cost: 160, pop: 2, trainTime: 5.5, hp: 140, speed: 66, radius: 9, range: 14, aggro: 130, damage: 16, cooldown: 0.7, projectileSpeed: 0, tier: 2, dmgBonus: { knight: 1.8, heavy: 1.2 } },
+  // 长枪对骑士系（含近卫军）1.6-1.8：按人口效率反制高阶骑兵——
+  // 没有这条，近卫军 DPS/人口(13.0) 反超长枪(11.4)，克制链在最高档断裂（实测）
+  pikeman: { name: '长枪兵', cost: 160, pop: 2, trainTime: 5.5, hp: 140, speed: 66, radius: 9, range: 14, aggro: 130, damage: 16, cooldown: 0.7, projectileSpeed: 0, tier: 2, dmgBonus: { knight: 1.8, champion: 1.6, heavy: 1.2 } },
   knight: { name: '骑士', cost: 240, pop: 3, trainTime: 7, hp: 220, speed: 120, radius: 10, range: 12, aggro: 170, damage: 26, cooldown: 0.72, projectileSpeed: 0, tier: 2, dmgBonus: { archer: 1.5 } },
   // T3（攻城工坊）：投石车破建筑龟缩（对建筑 ×3 + 溅射）/ 近卫军重甲精英（28% 减伤）
   catapult: { name: '投石车', cost: 420, pop: 4, trainTime: 9, hp: 300, speed: 46, radius: 12, range: 190, aggro: 190, damage: 52, cooldown: 1.5, projectileSpeed: 220, tier: 3, dmgBonus: { building: 3 } },
@@ -45,9 +47,8 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   barracks: { name: '军营', cost: 150, hp: 550, buildTime: 8, half: 30, income: 0, weapon: null },
   tower: { name: '箭塔', cost: 120, hp: 420, buildTime: 6, half: 30, income: 0, weapon: { range: 175, damage: 13, cooldown: 1.0, projectileSpeed: 320 } },
   // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
-  smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null, unlocks: 2 },
-  workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null, unlocks: 3 },
-  // 中原专属：不占矿点的安全经济（经济纵深）
+  smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null },
+  workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null },
   // 中原专属：不占矿点的第二经济（经济纵深，矿被拆仍有底线收入）
   farm: { name: '农田', cost: 60, hp: 200, buildTime: 6, half: 30, income: 3, weapon: null },
 };
@@ -312,29 +313,24 @@ export interface CivDef {
   /** 中原：塔可升级、塔任意建造（己方单位 250 内）、农田 */
   towerUpgradable: boolean;
   towerAnywhere: boolean;
-  /** 骑士：克制加成 +0.3（战术素养） */
+  /** 骑士：克制加成（fireAt 中叠加到 dmgBonus 倍率上，只对单位生效） */
   counterBonus: number;
-  /** 金矿修正（骑士团专属：贵但硬 + 可升级加附属箭塔） */
+  /** 金矿修正（骑士团专属：贵但硬 + 可升级） */
   mineCost: number;
   mineHpMul: number;
   mineUpgradable: boolean;
   mineMaxLevel: number;
   mineUpgradeCost: number;
-  /** 游牧：攻击敌方金矿掠夺金 */
-  minePlunder: boolean;
   /** AI 行为参数（与 DIFFICULTY 正交） */
   ai: {
-    earlyAggro: number;
     wavePopMul: number;
     waveCdMul: number;
     waveMaxMul: number;
     raidMode: boolean;
-    towerPush: boolean;
     towerTarget: number;
     farmTarget: number;
-    workshopTarget: boolean;
     defendRadius: number;
-    /** 出兵配比覆盖（缺省走 DIFFICULTY.weights + 科技分层） */
+    /** 出兵配比完整覆盖（缺省走 DIFFICULTY.weights + 科技分层） */
     armyMix: Partial<Record<UnitType, number>>;
   };
 }
@@ -347,42 +343,42 @@ export const CIVS: Record<CivId, CivDef> = {
     unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.0,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: false, towerUpgradable: true, towerAnywhere: true, counterBonus: 0,
-    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0, minePlunder: false,
+    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0,
     ai: {
-      earlyAggro: 1.3, wavePopMul: 0.8, waveCdMul: 1.2, waveMaxMul: 1.1,
-      raidMode: false, towerPush: true, towerTarget: 4, farmTarget: 8,
-      workshopTarget: true, defendRadius: 300,
+      wavePopMul: 0.8, waveCdMul: 1.2, waveMaxMul: 1.1,
+      raidMode: false, towerTarget: 4, farmTarget: 8,
+      defendRadius: 300,
       armyMix: { infantry: 0.35, archer: 0.2, pikeman: 0.2, heavy: 0.15, champion: 0.1 },
     },
   },
   nomad: {
     id: 'nomad', name: '草原游牧',
-    desc: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵风筝袭扰，速度快全队 +18%。',
+    desc: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵替代弓手风筝袭扰，全队速度 +12%。',
     popCap: 70,
     unitHpMul: 1.0, unitDmgMul: 1.0, unitSpeedMul: 1.12,
     trainCostMul: 1.0, trainTimeMul: 0.9,
     plunder: true, towerUpgradable: false, towerAnywhere: false, counterBonus: 0,
-    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0, minePlunder: true,
+    mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0,
     ai: {
-      earlyAggro: 0.55, wavePopMul: 1.0, waveCdMul: 0.55, waveMaxMul: 0.5,
-      raidMode: true, towerPush: false, towerTarget: 0, farmTarget: 0,
-      workshopTarget: false, defendRadius: 240,
-      armyMix: { knight: 0.4, horsearcher: 0.4, heavy: 0.2 },
+      wavePopMul: 1.0, waveCdMul: 0.55, waveMaxMul: 0.5,
+      raidMode: true, towerTarget: 0, farmTarget: 0,
+      defendRadius: 240,
+      armyMix: { knight: 0.4, horsearcher: 0.35, heavy: 0.25 },
     },
   },
   knight: {
     id: 'knight', name: '圣辉骑士团',
-    desc: '全程 · 单兵质量。全员血 +15% 伤害 +10%，克制加成 +0.5；脱战再生 + 冲锋加成——你的每一支部队都是英雄。',
+    desc: '全程 · 单兵质量。全员血 +15% 伤害 +10% 造价 +15%，克制加成 +0.5，脱战缓慢再生，牧师随行治疗——每一支部队都是英雄。',
     popCap: 80,
     unitHpMul: 1.15, unitDmgMul: 1.10, unitSpeedMul: 1.0,
     trainCostMul: 1.15, trainTimeMul: 1.2,
     plunder: false, towerUpgradable: false, towerAnywhere: false, counterBonus: 0.5,
-    mineCost: 200, mineHpMul: 3.0, mineUpgradable: true, mineMaxLevel: 4, mineUpgradeCost: 100, minePlunder: false,
+    mineCost: 200, mineHpMul: 3.0, mineUpgradable: true, mineMaxLevel: 4, mineUpgradeCost: 100,
     ai: {
-      earlyAggro: 1.0, wavePopMul: 1.0, waveCdMul: 1.0, waveMaxMul: 0.9,
-      raidMode: false, towerPush: false, towerTarget: 2, farmTarget: 0,
-      workshopTarget: true, defendRadius: 300,
-      armyMix: { heavy: 0.35, pikeman: 0.3, champion: 0.25, archer: 0.1 },
+      wavePopMul: 1.0, waveCdMul: 1.0, waveMaxMul: 0.9,
+      raidMode: false, towerTarget: 2, farmTarget: 0,
+      defendRadius: 300,
+      armyMix: { heavy: 0.36, pikeman: 0.32, champion: 0.12, archer: 0.05, healer: 0.06 },
     },
   },
 };

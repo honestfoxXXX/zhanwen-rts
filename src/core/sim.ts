@@ -450,8 +450,10 @@ export function issueCommand(w: World, c: Command): boolean {
       const d = BUILDING_DEFS[c.building];
       const p = canPlace(w, c.side, c.building, c.x, c.y);
       if (!p.ok) { ev(w, { type: 'denied', reason: p.reason ?? 'place' }); return false; }
-      if (w.crystals[c.side] < d.cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
-      w.crystals[c.side] -= d.cost;
+      // 金矿造价按文明（骑士团 200）：此前 mineCost 只在配置里，建造一律扣 100（实测死字段）
+      const cost = c.building === 'mine' ? civOf(w, c.side).mineCost : d.cost;
+      if (w.crystals[c.side] < cost) { ev(w, { type: 'denied', reason: 'cost' }); return false; }
+      w.crystals[c.side] -= cost;
       const b = mkBuilding(w, c.side, c.building, p.x, p.y);
       if (c.building === 'mine') {
         const n = nearestFreeNode(w, p.x, p.y, 48);
@@ -594,7 +596,8 @@ function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[U
   }
   if (def.dmgBonus) {
     const bonus = isUnit(t) ? def.dmgBonus[t.type] : def.dmgBonus.building;
-    if (bonus) dmg *= bonus;
+    // 克制加成（骑士团战术素养）：叠加到倍率上，只对单位生效——拆建筑的 3× 不膨胀
+    if (bonus) dmg *= bonus + (isUnit(t) ? civOf(w, u.side).counterBonus : 0);
   }
   applyDamage(w, t, dmg, u.side);
   ev(w, {
@@ -827,8 +830,9 @@ function updateEconomy(w: World, dt: number): void {
     if (d.income) inc[b.side] += d.income;
   }
   // 难度倍率只作用于 AI（1 号及之后），玩家恒为 1.0。
-  // 96×96 大三角上三方相距甚远，1v2 的压力主要来自两线作战本身，AI 经济不额外补偿。
-  const aiScale = 1;
+  // 三人局 AI 科技化后双 AI 合围压力实测过载（脚本玩家普通档 17%）——
+  // 用 3P 收入缩放整体回调 AI 经济，而不动文明设计与难度曲线。
+  const aiScale = w.players === 3 ? 0.95 : 1;
   for (let s = 1; s < w.players; s++) inc[s] *= DIFFICULTY[w.difficulty].incomeMult * aiScale;
   w.income = inc;
   for (let s = 0; s < w.players; s++) {

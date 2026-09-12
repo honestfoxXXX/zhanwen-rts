@@ -4,6 +4,7 @@
  */
 import { BUILDING_DEFS, CROWN_WINDOW, MAP_H, MAP_W, UNIT_DEFS } from '../src/core/config';
 import { findBuildSlot, issueCommand, type World } from '../src/core/sim';
+import { rngNext } from '../src/core/rng';
 import type { Side, UnitType } from '../src/core/types';
 
 const ZW_PLAYERS = process.env.ZW_PLAYERS !== undefined ? Number(process.env.ZW_PLAYERS) : 2;
@@ -72,8 +73,9 @@ export function playerThink(w: World): void {
     // 攒钱期不完全停兵：仍出最便宜的步兵填线，避免两分钟兵力真空
     const t: UnitType = saving
       ? 'infantry'
-      : w.crystals[side] > 500 && hasWorkshop ? (Math.random() < 0.5 ? 'catapult' : 'champion')
-      : w.crystals[side] > 300 && hasSmithy ? (Math.random() < 0.5 ? 'knight' : 'pikeman')
+      // 用世界 RNG 而非 Math.random：同种子跑批逐位可复现（Math.random 是平衡验证的噪声源）
+      : w.crystals[side] > 500 && hasWorkshop ? (rngNext(w) < 0.5 ? 'catapult' : 'champion')
+      : w.crystals[side] > 300 && hasSmithy ? (rngNext(w) < 0.5 ? 'knight' : 'pikeman')
       : w.crystals[side] > 260 ? 'heavy'
       : w.crystals[side] > 90 ? 'archer'
       : 'infantry';

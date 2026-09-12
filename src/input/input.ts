@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, MAP_H, MAP_W, TILE } from '../core/config';
+import { BUILDING_DEFS, MAP_H, MAP_W, TILE, UNIT_DEFS } from '../core/config';
 import { canPlace, pickBuildingAt, pickUnitAt, unitsInRect } from '../core/sim';
 import type { BuildingType, Command, World } from '../core/types';
 import type { Camera } from '../render/camera';
@@ -323,7 +323,7 @@ export class Input {
           v.x >= this.cam.x && v.x <= this.cam.x + this.cam.viewW &&
           v.y >= this.cam.y && v.y <= this.cam.y + this.cam.viewH);
         this.ui.selection = same.map(v => v.id);
-        this.hooks.toast(`已选中 ${same.length} 个${UNIT_NAME[u.type] ?? '部队'}`);
+        this.hooks.toast(`已选中 ${same.length} 个${UNIT_DEFS[u.type].name}`);
       } else {
         this.ui.selection = [u.id];
       }
@@ -434,8 +434,3 @@ export class Input {
   }
 }
 
-/** 兵种中文名（toast 用） */
-const UNIT_NAME: Record<string, string> = {
-  infantry: '步兵', archer: '弓手', heavy: '重装', pikeman: '长枪兵', knight: '骑士',
-  catapult: '投石车', champion: '近卫军', horsearcher: '游骑兵', healer: '牧师',
-};

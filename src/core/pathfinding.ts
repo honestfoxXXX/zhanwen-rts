@@ -45,6 +45,13 @@ export function lineClear(blocked: Uint8Array, x0: number, y0: number, x1: numbe
  * A* 寻路（8 方向、禁止斜穿角落），返回世界坐标路径点（含视线平滑与精确终点）。
  * 输入输出均为世界坐标。
  */
+// A* 复用缓冲区（单线程同步调用，无重入）
+const _gCost = new Float32Array(COLS * ROWS);
+const _f = new Float32Array(COLS * ROWS);
+const _from = new Int32Array(COLS * ROWS);
+const _closed = new Uint8Array(COLS * ROWS);
+const heapScratch: number[] = [];
+
 export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number, y1: number): Vec[] | null {
   const st = nearestFreeTile(blocked, Math.floor(x0 / TILE), Math.floor(y0 / TILE));
   const gt = nearestFreeTile(blocked, Math.floor(x1 / TILE), Math.floor(y1 / TILE));
@@ -55,11 +62,13 @@ export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number
     return lineClear(blocked, x0, y0, x1, y1) ? [{ x: x1, y: y1 }] : [c];
   }
 
+  // 复用模块级缓冲（每次调用 fill 重置）：大图 A* 调用频繁，逐次分配 4×9216 数组是可观的 GC 压力
   const N = COLS * ROWS;
-  const gCost = new Float32Array(N).fill(Infinity);
-  const f = new Float32Array(N).fill(Infinity);
-  const from = new Int32Array(N).fill(-1);
-  const closed = new Uint8Array(N);
+  const gCost = _gCost; gCost.fill(Infinity);
+  const f = _f; f.fill(Infinity);
+  const from = _from; from.fill(-1);
+  const closed = _closed; closed.fill(0);
+  heapScratch.length = 0;
   const startI = tIdx(st[0], st[1]);
   const goalI = tIdx(gt[0], gt[1]);
   const h = (i: number): number => {
@@ -68,7 +77,8 @@ export function findPath(blocked: Uint8Array, x0: number, y0: number, x1: number
     return 10 * (Math.max(dx, dy) - Math.min(dx, dy)) + 14 * Math.min(dx, dy);
   };
 
-  const heap: number[] = [startI];
+  const heap = heapScratch;
+  heap.push(startI);
   gCost[startI] = 0;
   f[startI] = h(startI);
   const push = (i: number): void => {

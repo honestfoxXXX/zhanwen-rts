@@ -13,7 +13,9 @@ type DifficultyDef = (typeof DIFFICULTY)[World['difficulty']];
 const BARRACK_OFFSETS: [number, number][] = [[-80, 40], [80, 40], [-80, -60], [80, -60]];
 const TOWER_OFFSETS: [number, number][] = [[-40, 80], [40, 80], [0, -90]];
 
-const TYPES: UnitType[] = ['infantry', 'archer', 'heavy'];
+/** 全部可训练兵种：加权抽签、侦查计数与反制判断都必须覆盖全部档位，
+ *  否则科技解锁后 AI 仍然只会造一本兵（实测教训：T2/T3 权重加进了从不被抽取的槽位） */
+const ALL_TYPES: UnitType[] = ['infantry', 'archer', 'heavy', 'pikeman', 'knight', 'catapult', 'champion', 'horsearcher', 'healer'];
 
 /**
  * 反制表：对手主力是 T 时，应多出 COUNTER[T]。
@@ -83,18 +85,23 @@ function updateScout(w: World, side: Side): void {
     if (u.dead || u.side === side) continue;
     cnt[u.type]++;
   }
-  for (const t of TYPES) w.ai[side].scout[t] = w.ai[side].scout[t] * 0.9 + cnt[t] * 0.1;
+  for (const t of ALL_TYPES) w.ai[side].scout[t] = w.ai[side].scout[t] * 0.9 + cnt[t] * 0.1;
 }
 
-/** 按难度权重抽兵，并对当前主要威胁做针对性加权（缺失兵种权重按 0） */
-function pickUnit(w: World, side: Side, weights: Partial<Record<UnitType, number>>): UnitType {
+/**
+ * 加权抽兵。科技（军械库/工坊）解锁 T2/T3 权重，文明门禁过滤专属兵种，
+ * 侦查到敌方主力时对克制兵种加权——然后才按全兵种轮盘抽取。
+ * 导出供测试钉住门禁行为（T2/T3 必须真的会出场）。
+ */
+export function pickUnit(w: World, side: Side, base: Partial<Record<UnitType, number>>): UnitType {
   const scout = w.ai[side].scout;
+  const cv = civOf(w, side);
   const hasSmithy = w.buildings.some(b => b.side === side && b.type === 'smithy' && !b.dead && b.buildT <= 0);
   const hasWorkshop = w.buildings.some(b => b.side === side && b.type === 'workshop' && !b.dead && b.buildT <= 0);
-  const wts = Object.assign(
-    { infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0 } as Record<UnitType, number>,
-    weights,
-  );
+  const wts: Record<UnitType, number> = {
+    infantry: 0, archer: 0, heavy: 0, pikeman: 0, knight: 0, catapult: 0, champion: 0, horsearcher: 0, healer: 0,
+    ...base,
+  };
   if (hasSmithy) {
     wts.pikeman += 0.35;
     wts.knight += 0.4;
@@ -106,17 +113,29 @@ function pickUnit(w: World, side: Side, weights: Partial<Record<UnitType, number
     wts.catapult += 0.35;
     wts.champion += 0.4;
   }
-  const seen = scout.infantry + scout.archer + scout.heavy;
+  const seen = ALL_TYPES.reduce((n, t) => n + scout[t], 0);
   if (seen >= 3) {
     let dom: UnitType = 'infantry';
-    for (const t of TYPES) if (scout[t] > scout[dom]) dom = t;
+    for (const t of ALL_TYPES) if (scout[t] > scout[dom]) dom = t;
     wts[COUNTER[dom]] += 0.35;
   }
-  const sum = wts.infantry + wts.archer + wts.heavy;
+  // 门禁归零放在所有加权之后：先加权后过滤，解锁瞬间权重不会被稀释
+  for (const t of ALL_TYPES) {
+    const tier = UNIT_DEFS[t].tier;
+    if ((tier === 2 && !hasSmithy) || (tier === 3 && !hasWorkshop)) wts[t] = 0;
+  }
+  if (cv.id !== 'nomad') wts.horsearcher = 0;
+  else wts.archer = 0; // 游牧以游骑兵完全替代弓手
+  if (cv.id !== 'knight') wts.healer = 0;
+
+  const sum = ALL_TYPES.reduce((n, t) => n + Math.max(0, wts[t]), 0);
+  if (sum <= 0) return 'infantry';
   const r = rngNext(w);
   let acc = 0;
-  for (const t of TYPES) {
-    acc += wts[t] / sum;
+  for (const t of ALL_TYPES) {
+    const wt = Math.max(0, wts[t]);
+    if (wt <= 0) continue;
+    acc += wt / sum;
     if (r <= acc) return t;
   }
   return 'infantry';
@@ -170,8 +189,10 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   // 波次门槛/间隔/时长乘数、掠夺模式、塔阵推进、回防半径——每文明一份打法。
   const cv = civOf(w, side);
   const p = cv.ai;
+  // 三人局节奏缩放：波次门槛更低（小波更频繁的旧设定）叠加 AI 科技化后会滚成
+  // 双 AI 合围——实测普通档 8%/困难 0%。波次间隔回归与 1v1 一致，只保留更小的门槛。
   const waveScale = w.players === 3 ? 0.75 : 1;
-  const cdScale = w.players === 3 ? 0.85 : 1;
+  const cdScale = w.players === 3 ? 1.0 : 1;
   const maxMines = Math.round(d.maxMines);
   const maxBarracks = Math.round(d.maxBarracks);
   const maxTowers = Math.min(p.towerTarget, Math.round(d.maxTowers));
@@ -207,8 +228,9 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
     }
   }
 
-  // —— 经济：扩张优先于一切
-  if (mines.length < maxMines && freeNodes.length && w.crystals[side] >= BUILDING_DEFS.mine.cost) {
+  // —— 经济：扩张优先于一切（金矿造价按文明：骑士团 200）
+  const mineCost = civOf(w, side).mineCost;
+  if (mines.length < maxMines && freeNodes.length && w.crystals[side] >= mineCost) {
     const n = nextNode(w, hq, mines.length);
     if (n) issueCommand(w, { type: 'build', side, building: 'mine', x: n.x, y: n.y });
   }
@@ -258,10 +280,12 @@ function aiSide(w: World, side: Side, d: DifficultyDef, dt: number): void {
   if (!smithy && mines.length >= 4 && w.crystals[side] < BUILDING_DEFS.smithy.cost + 100) maxQueue = 1;
   else if (smithy && !workshop && mines.length >= 6 && w.crystals[side] < BUILDING_DEFS.workshop.cost + 200) maxQueue = 1;
   if (barracks.length && w.queue[side].length < maxQueue) {
-    const t = pickUnit(w, side, { ...d.weights, ...(cv.ai.armyMix ?? {}) });
+    // 文明 armyMix 是完整配比覆盖（不是叠加）：游牧就该是骑士/游骑兵海，而不是混进半队步兵
+    const base: Partial<Record<UnitType, number>> = Object.keys(cv.ai.armyMix ?? {}).length ? cv.ai.armyMix : d.weights;
+    const t = pickUnit(w, side, base);
     const ud = UNIT_DEFS[t];
     // 矿没铺满时给扩张留足预算，避免造兵把经济钱吃光
-    const reserve = freeNodes.length && mines.length < maxMines ? BUILDING_DEFS.mine.cost : 0;
+    const reserve = freeNodes.length && mines.length < maxMines ? mineCost : 0;
     if (w.crystals[side] >= ud.cost + reserve && w.popUsed[side] + ud.pop <= popCapOf(w, side)) {
       issueCommand(w, { type: 'train', side, unit: t });
     }

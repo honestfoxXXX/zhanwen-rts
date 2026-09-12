@@ -1,4 +1,4 @@
-import { BUILDING_DEFS, MAPS, MAP_H, MAP_W, UNIT_DEFS } from './core/config';
+import { BUILDING_DEFS, CIVS, MAPS, MAP_H, MAP_W, UNIT_DEFS } from './core/config';
 import { canPlace, createWorld, findBuildSlot, issueCommand, STEP, stepWorld } from './core/sim';
 import { findPath } from './core/pathfinding';
 import type { BuildingType, CivId, Projectile, World } from './core/types';
@@ -174,9 +174,8 @@ function startGame(diff: World['difficulty'], players = 2): void {
   world = createWorld(diff, seed, mapIndex, civs);
   hud.setMapBrief(map.name, map.brief);
   hud.toast(`地形：${map.name} —— ${map.brief}`);
-  // 对手文明情报：打法提示帮玩家预判（游牧偷矿 / 中原塔阵 / 骑士团会战）
-  const CIV_NAME: Record<CivId, string> = { central: '中原王朝（塔阵人海）', nomad: '草原游牧（掠夺偷矿）', knight: '圣辉骑士团（单兵会战）' };
-  for (let i = 1; i < players; i++) hud.feed(`对手：${CIV_NAME[world.civs[i]]}`, 'warn');
+  // 对手文明情报：直接引用文明描述，单一出处
+  for (let i = 1; i < players; i++) hud.feed(`对手：${CIVS[world.civs[i]].name} —— ${CIVS[world.civs[i]].desc}`, 'warn');
   ui.selection = [];
   input.cancelMode();
   fx.clear();
@@ -600,7 +599,7 @@ window.addEventListener('keydown', e => {
     if (buildT !== 'farm' || world.civs[0] === 'central') hud.buildByHotkey(buildT);
     return;
   }
-  if (k >= '1' && k <= '7') { hud.trainByHotkey(Number(k) - 1); return; }
+  if (k >= '1' && k <= '8') { hud.trainByHotkey(Number(k) - 1); return; }
   switch (k) {
     case 'f': hud.selectAll(); break;
     case 'g': hud.rally(); break;
@@ -614,17 +613,12 @@ window.addEventListener('keydown', e => {
 // 阻止移动端双击缩放
 document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
 
-// 菜单：文明选择（三选一）
-const CIV_DESC: Record<CivId, string> = {
-  central: '后期 · 防御阵地 · 人海。箭塔任意建造且可升级，农田提供经济纵深，人口上限最高。',
-  nomad: '前中期 · 机动袭扰 · 掠夺。击杀与破建筑有额外黄金，游骑兵风筝袭扰，全队速度 +18%。',
-  knight: '单兵质量 · 会战。全员血 +22% 伤害 +15%，但造价 +25%——输数量，赢会战。',
-};
+// 菜单：文明选择（三选一）——描述统一读 CIVS.desc，杜绝第二份文案漂移
 document.querySelectorAll('#civSeg button').forEach(b => {
   b.addEventListener('click', () => {
     civSel = (b as HTMLElement).dataset.civ as CivId;
     document.querySelectorAll('#civSeg button').forEach(v => v.classList.toggle('on', v === b));
     const desc = document.getElementById('civDesc');
-    if (desc) desc.textContent = CIV_DESC[civSel];
+    if (desc) desc.textContent = CIVS[civSel].desc;
   });
 });
