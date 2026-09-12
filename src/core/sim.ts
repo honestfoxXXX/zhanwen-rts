@@ -1142,6 +1142,8 @@ export function hashWorld(w: World): number {
   for (const u of w.units) {
     if (u.dead) continue;
     mix(u.id); mix(u.side); mix(u.type.length); mixF(u.x); mixF(u.y); mixF(u.hp);
+    // 冲锋原点/受击时间影响后续伤害与再生——指纹必须覆盖
+    mixF(u.chargeX ?? -1); mixF(u.chargeY ?? -1); mixF(u.lastHit ?? -1);
   }
   for (const b of w.buildings) {
     if (b.dead) continue;

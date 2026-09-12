@@ -85,7 +85,8 @@ export function isMuted(): boolean { return muted; }
 
 /** 设置面板三轨音量：主/音乐/音效（0-1），实时生效 */
 export function setVolumes(masterV: number, musicV: number, sfxV: number): void {
-  if (master) master.gain.value = masterV;
+  // 静音态下拖主音量不得解开总线（否则环境风等持续声绕过 muted 重新可闻）
+  if (master) master.gain.value = muted ? 0 : masterV;
   if (musicBus) musicBus.gain.value = musicV;
   if (sfxBus) sfxBus.gain.value = sfxV;
 }

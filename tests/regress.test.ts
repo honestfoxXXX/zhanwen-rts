@@ -125,10 +125,11 @@ describe('寻路与判定', () => {
     expect(lineClear(blocked, 980, 980, 1060, 1060)).toBe(false);
   });
 
-  it('开阔直线仍然通行（平滑不能用性变差）', () => {
-    const w = createWorld('normal', 5);
-    expect(lineClear(w.blocked, 980, 980, 1060, 1060)).toBe(true);
-    expect(lineClear(w.blocked, 400, 3440, 3440, 400)).toBe(false ? false : expect.any(Boolean) ? lineClear(w.blocked, 400, 3440, 3440, 400) : true);
+  it('无障碍直线通行、横穿已知岩脊被挡（平滑不能用性变差）', () => {
+    const w = createWorld('normal', 5); // gate 图：岩石 (45,45) (46,45) (45,46) 在中央
+    expect(lineClear(w.blocked, 1000, 1000, 1100, 1100)).toBe(true);
+    // 横穿 tile (45,45)（x 1800-1840, y 1800-1840）的水平线必须被挡
+    expect(lineClear(w.blocked, 1700, 1820, 1940, 1820)).toBe(false);
   });
 });
 
