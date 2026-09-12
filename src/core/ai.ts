@@ -125,11 +125,7 @@ function pickUnit(w: World, side: Side, weights: Partial<Record<UnitType, number
 /** 波次目标：奇数波拔最近的敌方矿场断经济，偶数波推最近的敌方主基地；
  *  onlyMines（掠夺模式）：永远只袭击矿场，绝不围攻城堡 */
 function pickGoal(w: World, side: Side, hq: Building, waveIndex: number, onlyMines = false): Vec {
-  // 战雾感知：AI 波次只能打"亲眼见过"的目标（HQ 位置开局默认知晓）。
-  // 战术层（单位自动索敌）本来就是近距离局部感知，不受影响。
-  const seen = w.aiSeen[side];
-  const foes = w.buildings.filter(b => b.side !== side && !b.dead &&
-    (seen[b.id] === 1 || b.type === 'hq'));
+  const foes = w.buildings.filter(b => b.side !== side && !b.dead);
   // 掠夺模式：以矿为主，但每 3 波穿插一次推家——纯拆矿永远赢不了，必须周期性终结
   const wantType = onlyMines
     ? (waveIndex % 3 === 2 ? 'hq' : 'mine')

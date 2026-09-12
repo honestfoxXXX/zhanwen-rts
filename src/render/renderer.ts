@@ -10,7 +10,6 @@ import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SH
 import { getSprite } from './spriteCache';
 import { flashOf } from './feedback';
 import { settings } from '../settings';
-import { isVisibleAt } from '../core/sim';
 import type { BuildingType, Side } from '../core/types';
 
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
@@ -71,33 +70,6 @@ function initGrain(): void {
 
 // 3840² 全分辨率画布在 iOS 上逼近内存红线；0.75 分辨率（2880²）是清晰度与内存的平衡点
 const BG_SCALE = 0.75;
-
-// 战雾覆盖层：tile 级 ImageData 上采样到世界尺寸（双线性平滑边缘）
-let fogCanvas: HTMLCanvasElement | null = null;
-let fogCtx: CanvasRenderingContext2D | null = null;
-let fogImg: ImageData | null = null;
-
-function drawFog(sctx: CanvasRenderingContext2D, w: World): void {
-  if (!fogCanvas) {
-    fogCanvas = document.createElement('canvas');
-    fogCanvas.width = COLS;
-    fogCanvas.height = ROWS;
-    fogCtx = fogCanvas.getContext('2d');
-    fogImg = fogCtx!.createImageData(COLS, ROWS);
-  }
-  const img = fogImg!;
-  const d = img.data;
-  for (let i = 0; i < COLS * ROWS; i++) {
-    const o = i * 4;
-    d[o] = 7; d[o + 1] = 11; d[o + 2] = 8;
-    d[o + 3] = w.visible[i] ? 0 : w.explored[i] ? 96 : 205;
-  }
-  fogCtx!.putImageData(img, 0, 0);
-  sctx.save();
-  sctx.imageSmoothingEnabled = true;
-  sctx.drawImage(fogCanvas, 0, 0, MAP_W, MAP_H);
-  sctx.restore();
-}
 
 // 河流采样（A1 绘制时填充；运行时用于水面闪烁）
 const riverSamples: { x: number; y: number; a: number }[] = [];
@@ -1007,18 +979,12 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
 
   // 建筑（按 y 排序）
   const buildings = [...w.buildings].sort((a, b) => a.y - b.y);
-  for (const b of buildings) {
-    if (b.side !== 0 && !isVisibleAt(w, b.x, b.y)) continue;
-    drawBuilding(sctx, b, w.time, w.civs[b.side]);
-  }
+  for (const b of buildings) drawBuilding(sctx, b, w.time, w.civs[b.side]);
 
-  // 单位（按 y 排序）；战争迷雾：视野外的敌方单位不画
+  // 单位（按 y 排序）
   const sel = new Set(ui.selection);
   const units = [...w.units].sort((a, b) => a.y - b.y);
-  for (const u of units) {
-    if (u.side !== 0 && !isVisibleAt(w, u.x, u.y)) continue;
-    drawUnit(sctx, u, w.time, sel.has(u.id));
-  }
+  for (const u of units) drawUnit(sctx, u, w.time, sel.has(u.id));
 
   // 弹道：箭矢 / 炮弹（高度弧线 + 地面影子）
   for (const p of w.projectiles) {
@@ -1096,9 +1062,6 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
       sctx.globalAlpha = 1;
     }
   }
-  // 战雾压暗（在实体之上、特效之下：特效是全局反馈不该被雾吃掉）
-  drawFog(sctx, w);
-
   // 放置幽灵（世界空间，画在场景层上，位于特效之下）
   if (ui.ghost) {
     const gh = ui.ghost;

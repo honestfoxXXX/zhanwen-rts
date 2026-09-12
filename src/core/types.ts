@@ -183,12 +183,6 @@ export interface World {
   queue: UnitType[][]; // 全局造兵队列（每方）
   rally: Vec[];
   blocked: Uint8Array;
-  /** 玩家（side 0）战争迷雾：explored=已探索（永久），visible=当前视野内（每 8 tick 重算）。
-   *  tile 索引 = ty*COLS+tx。表现层据此压暗/藏敌；AI 战略目标仅用 aiSeen。 */
-  explored: Uint8Array;
-  visible: Uint8Array;
-  /** AI 各方"亲眼见过"的建筑标记（aiSeen[side][buildingId]），限制 AI 波次只能打见过的目标 */
-  aiSeen: Uint8Array[];
   /** id → 实体索引。避免每帧 O(n) 线性查找；手搓实体（如测试）未入索引时会回退扫描并回填 */
   index: Map<number, Unit | Building>;
   nextId: number;
