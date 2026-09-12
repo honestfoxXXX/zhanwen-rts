@@ -89,6 +89,18 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
     // 护甲：高阶精英的独占减伤（查表确定性安全）
     const armor = UNIT_DEFS[target.type].armor;
     if (armor) d *= 1 - armor;
+    target.lastHit = w.time; // 脱战再生计时起点
+  }
+  // 游牧掠夺：攻击金矿每次 +2（建筑级冷却），无论是否致死——
+  // 此前嵌在致死分支，注释写的"每次命中"实际只在拆掉时给一次
+  if (!isUnit(target) && target.type === 'mine' && target.buildT <= 0 &&
+      by !== target.side && civOf(w, by).plunder) {
+    const mine = target as Building & { plunderCd?: number };
+    if (!mine.plunderCd || mine.plunderCd <= 0) {
+      w.crystals[by] += 2;
+      w.stats.earned[by] += 2;
+      mine.plunderCd = 3;
+    }
   }
   target.hp -= d;
   if (target.hp <= 0) {
@@ -101,14 +113,6 @@ export function applyDamage(w: World, target: Unit | Building, dmg: number, by: 
         : BUILDING_DEFS[target.type].cost * 0.25;
       w.crystals[by] += value;
       w.stats.earned[by] += value;
-      // 掠夺金矿额外收益：每次命中 +2 金（有建筑级冷却）
-      if (target.type === 'mine' && target.buildT <= 0) {
-        const mine = target as Building & { plunderCd?: number };
-        if (!mine.plunderCd || mine.plunderCd <= 0) {
-          w.crystals[by] += 2;
-          mine.plunderCd = 3;
-        }
-      }
     }
     return true;
   }
@@ -368,6 +372,7 @@ function pushOutUnits(w: World, b: Building): void {
 
 export function issueCommand(w: World, c: Command): boolean {
   if (w.gameOver) return false;
+  if (!w.alive[c.side]) return false; // 出局方不再接受任何指令（城堡被毁即出局）
   switch (c.type) {
     case 'move': {
       let any = false;
@@ -391,6 +396,8 @@ export function issueCommand(w: World, c: Command): boolean {
         if (!u) continue;
         u.order = { kind: 'moveForced', x: c.x, y: c.y };
         u.charged = true;
+        u.chargeX = u.x;
+        u.chargeY = u.y;
         u.engageId = null;
         const p = findPath(w.blocked, u.x, u.y, c.x, c.y);
         u.path = p ?? [];
@@ -460,7 +467,7 @@ export function issueCommand(w: World, c: Command): boolean {
         if (n) n.mineId = b.id;
       }
       pushOutUnits(w, b);
-      ev(w, { type: 'built', x: b.x, y: b.y, side: c.side });
+      ev(w, { type: 'built', x: b.x, y: b.y, side: c.side, placed: true });
       return true;
     }
     case 'train': {
@@ -558,7 +565,11 @@ function formationOffset(w: World, u: Unit, tx: number, ty: number): Vec {
 
 function setMoveOrder(w: World, u: Unit, x: number, y: number): void {
   u.order = { kind: 'move', x, y };
-  u.charged = true; // 冲锋：移动令后首攻加成
+  // 冲锋：移动令后首攻加成。原点记录在下令处，消费时校验实际位移——
+  // 原地刷移动令不该白得 1.4×（实测 3s 输出 35→49）
+  u.charged = true;
+  u.chargeX = u.x;
+  u.chargeY = u.y;
   u.engageId = null;
   const p = findPath(w.blocked, u.x, u.y, x, y);
   u.path = p ?? [];
@@ -589,9 +600,11 @@ function acquireTarget(w: World, u: Unit, aggro: number): Unit | Building | null
 
 function fireAt(w: World, u: Unit, t: Unit | Building, def: (typeof UNIT_DEFS)[UnitType]): void {
   let dmg = def.damage * civOf(w, u.side).unitDmgMul;
-  // 冲锋：移动后首攻 ×1.4（近战限定）
+  // 冲锋：真实行军后的首攻 ×1.4（近战限定）。位移不足 50 视为原地刷令，不触发
   if (u.charged && !def.projectileSpeed) {
-    dmg *= 1.4;
+    const marched = u.chargeX === undefined ? Infinity
+      : Math.sqrt((u.x - (u.chargeX ?? 0)) ** 2 + (u.y - (u.chargeY ?? 0)) ** 2);
+    if (marched >= 50) dmg *= 1.4;
     u.charged = false;
   }
   if (def.dmgBonus) {
@@ -691,8 +704,9 @@ function updateUnit(w: World, u: Unit, dt: number): void {
       target.hp = Math.min(target.maxHp, target.hp + 15);
       u.cd = def.cooldown;
       u.facing = Math.atan2(target.y - u.y, target.x - u.x);
+      return;
     }
-    return;
+    // 无伤员：落到正常移动逻辑（此前无条件 return，牧师第一次治疗之前永远不走）
   }
 
   let tgt: Unit | Building | null = null;
@@ -1005,20 +1019,24 @@ function cleanup(w: World): void {
         w.queue[b.side] = [];
       }
     }
-    if (b.type === 'hq' && !w.gameOver) {
-      // 混战：主基地被毁即出局，最后存活的一方获胜（同时被灭则为平局）
+    if (b.type === 'hq') {
+      // 混战：主基地被毁即出局。只做标记，结算统一放在循环外——
+      // 同一批次多座城堡死亡时（互殴同归），先全量标记再判定才可能得到平局
       w.alive[b.side] = false;
       ev(w, { type: 'eliminated', side: b.side });
-      const rest: Side[] = [];
-      for (let s = 0; s < w.players; s++) if (w.alive[s]) rest.push(s as Side);
-      if (rest.length <= 1) {
-        const winner = rest.length === 1 ? rest[0] : null;
-        w.gameOver = { winner };
-        ev(w, { type: 'gameOver', winner });
-      }
     }
   }
   if (deadB.length) w.buildings = w.buildings.filter(b => !b.dead);
+
+  if (!w.gameOver && deadB.some(b => b.type === 'hq')) {
+    const rest: Side[] = [];
+    for (let s = 0; s < w.players; s++) if (w.alive[s]) rest.push(s as Side);
+    if (rest.length <= 1) {
+      const winner = rest.length === 1 ? rest[0] : null;
+      w.gameOver = { winner };
+      ev(w, { type: 'gameOver', winner });
+    }
+  }
 
   if (deadIds.size) {
     for (const u of w.units) {
@@ -1054,12 +1072,13 @@ export function stepWorld(w: World, dt: number): void {
   }
   cleanup(w);
 
-  // 圣光洗礼（骑士文明专属）：脱战状态每秒再生 1.5 HP
+  // 圣光洗礼（骑士文明专属）：脱战 4 秒后每秒再生 1.5 HP
   if (w.tick % 30 === 0) {
     const dt30 = 30 * STEP;
     for (const u of w.units) {
       if (u.dead || u.hp >= u.maxHp) continue;
       if (civOf(w, u.side).id !== 'knight') continue;
+      if (u.lastHit !== undefined && w.time - u.lastHit < 4) continue; // 战斗中不再生
       const hp = Math.min(u.maxHp, u.hp + 1.5 * dt30);
       u.hp = hp;
     }
@@ -1111,7 +1130,15 @@ export function hashWorld(w: World): number {
   mix(w.tick);
   mixF(w.time);
   mix(w.rngState);
-  for (let s = 0; s < w.players; s++) { mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]); }
+  for (let s = 0; s < w.players; s++) {
+    mixF(w.crystals[s]); mix(w.popUsed[s]); mixF(w.income[s]);
+    for (const t of w.queue[s]) {
+      // 队列混入内容而非只混长度：'champion' 与 'catapult' 长度相同会漏
+      let th = 0;
+      for (let k = 0; k < t.length; k++) th = (th * 31 + t.charCodeAt(k)) >>> 0;
+      mix(th);
+    }
+  }
   for (const u of w.units) {
     if (u.dead) continue;
     mix(u.id); mix(u.side); mix(u.type.length); mixF(u.x); mixF(u.y); mixF(u.hp);

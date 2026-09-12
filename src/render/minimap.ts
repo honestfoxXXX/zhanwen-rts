@@ -54,8 +54,13 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
   g.stroke();
   g.globalAlpha = 1;
 
-  // 1v1 画国境线（两出生点垂直平分线）；三方图标出质心
+  // 1v1 画国境线（两出生点垂直平分线）；三方图标出质心。
+  // 线段按 ±4000 世界单位延伸，会画出面板外——裁剪到小地图矩形内
   const map = currentMap();
+  g.save();
+  g.beginPath();
+  roundRect(g, r.x, r.y, r.w, r.h, 6);
+  g.clip();
   g.strokeStyle = 'rgba(201,162,39,0.55)';
   if (map.players === 2) {
     const a = map.spawns[0].pos, b = map.spawns[1].pos;
@@ -73,6 +78,7 @@ export function draw(g: CanvasRenderingContext2D, world: World, cam: Camera): vo
     g.arc(r.x + tcx * sx, r.y + tcy * sy, 3.5, 0, Math.PI * 2);
     g.stroke();
   }
+  g.restore(); // 解除面板裁剪
 
   // 河流 + 渡口标记（渡口=咽喉，玩家要知道在哪）
   for (const rv of map.rivers ?? []) {

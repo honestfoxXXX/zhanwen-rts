@@ -27,16 +27,36 @@ export function nearestFreeTile(blocked: Uint8Array, cx: number, cy: number): [n
   return null;
 }
 
-/** 两点连线是否无阻挡（步进采样） */
+/**
+ * 两点连线是否无阻挡（tile 级 supercover 遍历）。
+ * 旧实现按 14px 步进采样，会漏掉两个对角相邻障碍间的零宽缝，
+ * 让平滑路径绕过 A*「禁斜穿」约束直接跨角——改为段经过的每个 tile 都必须可通行。
+ * 显式 sqrt 而非 Math.hypot：保证跨 JS 引擎结果一致（联机 lockstep 的前提）
+ */
 export function lineClear(blocked: Uint8Array, x0: number, y0: number, x1: number, y1: number): boolean {
-  // 显式 sqrt 而非 Math.hypot：保证跨 JS 引擎结果一致（联机 lockstep 的前提）
+  let x = Math.floor(x0 / TILE), y = Math.floor(y0 / TILE);
+  const tx = Math.floor(x1 / TILE), ty = Math.floor(y1 / TILE);
+  if (isBlockedTile(blocked, x, y) || isBlockedTile(blocked, tx, ty)) return false;
   const dx = x1 - x0, dy = y1 - y0;
-  const d = Math.sqrt(dx * dx + dy * dy);
-  const steps = Math.max(1, Math.ceil(d / 14));
-  for (let i = 0; i <= steps; i++) {
-    const x = x0 + (x1 - x0) * i / steps;
-    const y = y0 + (y1 - y0) * i / steps;
-    if (isBlockedTile(blocked, Math.floor(x / TILE), Math.floor(y / TILE))) return false;
+  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+  // DDA：每次推进到下一个 tile 边界
+  let tMaxX = dx !== 0 ? (((x + (sx > 0 ? 1 : 0)) * TILE - x0) / dx) : Infinity;
+  let tMaxY = dy !== 0 ? (((y + (sy > 0 ? 1 : 0)) * TILE - y0) / dy) : Infinity;
+  const tDeltaX = dx !== 0 ? Math.abs(TILE / dx) : Infinity;
+  const tDeltaY = dy !== 0 ? Math.abs(TILE / dy) : Infinity;
+  let guard = 0;
+  while ((x !== tx || y !== ty) && guard++ < 256) {
+    if (tMaxX < tMaxY) {
+      x += sx; tMaxX += tDeltaX;
+    } else if (tMaxY < tMaxX) {
+      y += sy; tMaxY += tDeltaY;
+    } else {
+      // 恰好擦角：两侧正交 tile 都被占即为零宽对角缝，拒绝
+      if (isBlockedTile(blocked, x + sx, y) && isBlockedTile(blocked, x, y + sy)) return false;
+      x += sx; y += sy;
+      tMaxX += tDeltaX; tMaxY += tDeltaY;
+    }
+    if (isBlockedTile(blocked, x, y)) return false;
   }
   return true;
 }

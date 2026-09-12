@@ -33,7 +33,7 @@ export function initAudio(): void {
     if (Ctx) {
       ac = new Ctx();
       master = ac.createGain();
-      master.gain.value = settings.master;
+      master.gain.value = muted ? 0 : settings.master;
       // 压限器：混战时几十个声音叠在一起也不爆音
       const comp = ac.createDynamicsCompressor();
       comp.threshold.value = -16;
@@ -92,6 +92,8 @@ export function setVolumes(masterV: number, musicV: number, sfxV: number): void 
 
 export function toggleMute(): string {
   muted = !muted;
+  // 静音直接压 master：环境风/混响尾音等持续声也会停（此前只挡新声，风声一直在吹）
+  if (master) master.gain.value = muted ? 0 : settings.master;
   try { localStorage.setItem('zw_mute', muted ? '1' : '0'); } catch { /* ignore */ }
   return muted ? '关' : '开';
 }
@@ -177,8 +179,9 @@ function thud(vol: number, when: number, f0 = 130): void {
 }
 
 /** 拨弦音色（噪声突发 + 调谐带通 = 简化 Karplus-Strong），音乐层用 */
-function pluck(freq: number, vol: number, when: number): void {
+function pluck(freq: number, vol: number, when: number, dest?: GainNode | null): void {
   if (!ac || !sfxBus) return;
+  const out = dest ?? musicBus ?? sfxBus;
   const src = ac.createBufferSource();
   src.buffer = noiseBuf;
   const bp = ac.createBiquadFilter();
@@ -188,7 +191,7 @@ function pluck(freq: number, vol: number, when: number): void {
   const g = ac.createGain();
   g.gain.setValueAtTime(vol, when);
   g.gain.exponentialRampToValueAtTime(0.0001, when + 0.7);
-  src.connect(bp); bp.connect(g); g.connect(musicBus ?? sfxBus);
+  src.connect(bp); bp.connect(g); g.connect(out);
   src.start(when); src.stop(when + 0.72);
 }
 
@@ -220,11 +223,11 @@ function startAmbient(): void {
   lp.frequency.value = 320;
   const wg = ac.createGain();
   wg.gain.value = 0.03;
-  src.connect(lp); lp.connect(wg); wg.connect(mm);
+  src.connect(lp); lp.connect(wg); wg.connect(sfxBus ?? mm);
   windGain = wg;
   src.start();
   const chirp = (): void => {
-    if (muted || musicOn === false || battleLevel > 0.5 || !ac || !mm) return;
+    if (muted || battleLevel > 0.5 || !ac) return;
     const t0 = ac.currentTime + Math.random() * 0.3;
     const f0 = 1900 + Math.random() * 900;
     const o = ac.createOscillator();
@@ -235,7 +238,7 @@ function startAmbient(): void {
     o.frequency.exponentialRampToValueAtTime(f0 * 0.9, t0 + 0.1);
     g.gain.setValueAtTime(0.014, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
-    o.connect(g); g.connect(mm);
+    o.connect(g); g.connect(sfxBus ?? mm);
     o.start(t0); o.stop(t0 + 0.14);
   };
   birdTimer = window.setInterval(() => {
@@ -258,7 +261,7 @@ let musicNext = 0;
 function startMusic(): void {
   if (musicTimer !== null) return;
   musicTimer = window.setInterval(() => {
-    if (!ac || !master || muted || !musicOn) return;
+    if (!ac || !master || !musicOn) return;
     const now = ac.currentTime;
     if (musicNext < now) musicNext = now + 0.1;
     const battle = battleLevel > 0.35;
@@ -285,7 +288,7 @@ export function toggleMusic(): string {
 export type SoundName = 'shot' | 'boom' | 'die' | 'built' | 'train' | 'win' | 'lose' | 'draw' | 'ui' | 'deny' | 'move' | 'alarm' | 'clash' | 'siege';
 
 /** vol：0~1 的距离衰减系数，由调用方按事件与屏幕的距离计算；UI 音恒为 1 */
-export function play(name: SoundName, vol = 1): void {
+export function play(name: SoundName, vol = 1, delay = 0): void {
   if (!ac || muted) return;
   const now = performance.now();
   const gap = name === 'shot' ? 60 : name === 'move' ? 120 : name === 'die' ? 80 : name === 'clash' ? 90 : 0;
@@ -303,12 +306,14 @@ export function play(name: SoundName, vol = 1): void {
     case 'clash': // 剑刃交锋：非谐泛音簇（金属"铿"）
       metalClash(0.5 * v, ac.currentTime);
       break;
-    case 'siege': // 投石三段：闷响 → 风声 → 碎裂 + 石块散落
+    case 'siege': { // 投石三段：闷响 → 风声 → 碎裂（碎裂时刻随实际弹道飞行时间）
+      const fly = Math.max(0.15, Math.min(1.6, delay));
       tone(75, 40, 0.3, 'sine', 0.2 * v);
       noiseAt(0.4, 850, 260, 0.11 * v, 0.3, 'bandpass', 0.9);
-      noiseAt(0.32, 520, 120, 0.1 * v, 1.05);
-      metalClash(0.12 * v, ac.currentTime + 1.1, 1800);
+      noiseAt(0.32, 520, 120, 0.1 * v, fly);
+      metalClash(0.12 * v, ac.currentTime + fly + 0.05, 1800);
       break;
+    }
     case 'die': // 闷响倒地（低频下滑 + 闷噪，无锯齿）
       thud(0.075 * v, ac.currentTime);
       break;
@@ -327,8 +332,8 @@ export function play(name: SoundName, vol = 1): void {
       noiseAt(0.04, 1100, 420, 0.06 * v);
       tone(jitter(560), jitter(700), 0.06, 'sine', 0.045 * v, 0.03);
       break;
-    case 'move': // 令旗：轻拨弦
-      pluck(293.66, 0.05 * v, ac.currentTime);
+    case 'move': // 令旗：轻拨弦（UI 音走音效轨，不随音乐滑条消失）
+      pluck(293.66, 0.05 * v, ac.currentTime, sfxBus);
       break;
     case 'alarm': // 战号角：双锯齿 detune 过低通（去刺耳）+ 起音
       tone(196, 147, 0.6, 'sawtooth', 0.055 * v, 0, 0.03, 1400);
@@ -343,14 +348,14 @@ export function play(name: SoundName, vol = 1): void {
       tone(jitter(880), jitter(1080), 0.045, 'sine', 0.035 * v, 0.02);
       break;
     case 'win': // 胜利：拨弦号角琶音（D 大）
-      [293.66, 369.99, 440, 587.33].forEach((f, i) => pluck(f, 0.1, ac!.currentTime + i * 0.14));
-      pluck(587.33, 0.08, ac!.currentTime + 0.62);
+      [293.66, 369.99, 440, 587.33].forEach((f, i) => pluck(f, 0.1, ac!.currentTime + i * 0.14, sfxBus));
+      pluck(587.33, 0.08, ac!.currentTime + 0.62, sfxBus);
       break;
     case 'lose': // 战败：下行拨弦
-      [392, 330, 262, 196].forEach((f, i) => pluck(f, 0.09, ac!.currentTime + i * 0.18));
+      [392, 330, 262, 196].forEach((f, i) => pluck(f, 0.09, ac!.currentTime + i * 0.18, sfxBus));
       break;
     case 'draw': // 平局：交替拨弦
-      [440, 392, 440, 392].forEach((f, i) => pluck(f, 0.08, ac!.currentTime + i * 0.16));
+      [440, 392, 440, 392].forEach((f, i) => pluck(f, 0.08, ac!.currentTime + i * 0.16, sfxBus));
       break;
   }
 }

@@ -64,7 +64,7 @@ const hud = new Hud({
   start: (d, p) => startGame(d, p),
   pause: () => { if (state === 'play') { state = 'pause'; hud.showPause(true); } },
   resume: () => { if (state === 'pause') { state = 'play'; acc = 0; hud.showPause(false); } },
-  restart: () => { startGame(hud.difficulty); },
+  restart: () => { startGame(hud.difficulty, hud.selectedPlayers); },
   quit: () => { state = 'menu'; world = null; hud.showMenu(); },
   build: t => {
     if (!world || state !== 'play') return;
@@ -182,6 +182,9 @@ function startGame(diff: World['difficulty'], players = 2): void {
   prevProjectiles = [];
   shakeT = shakeDur = shakeAmp = shakeY = 0;
   alert = null;
+  alertLog.length = 0;
+  for (const g of groups) g.length = 0; // 实体 ID 每局从头编号，旧编队会串到新世界的单位
+  hud.resetForNewGame();
   hud.hideAlert();
   cam.resetZoom();
   cam.centerOn(world.spawns[0].x, world.spawns[0].y); // 开场镜头对准己方城堡
@@ -348,7 +351,12 @@ function drainEvents(): void {
           if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
           else fx.flash(e.x, e.y, e.big ?? false);
         }
-        if (e.from === 'catapult') play('siege', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
+        if (e.from === 'catapult') {
+          // 碎裂声对齐弹道落地：飞行时间 = 距离 / 投石车弹速 220
+          const fly = e.x !== undefined && e.y !== undefined && e.tx !== undefined && e.ty !== undefined
+            ? Math.hypot(e.tx - e.x, e.ty - e.y) / 220 : 0.6;
+          play('siege', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1, fly);
+        }
         else if (e.melee) play('clash', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         else play('shot', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         // 混战里不能靠"攻击方不是我"判断挨打（AI 互相打也算），必须看事件里记录的挨打方
@@ -372,7 +380,7 @@ function drainEvents(): void {
       case 'built':
         if (e.x !== undefined && e.y !== undefined && e.side !== undefined) fx.builtEvent(e.x, e.y, e.side);
         play('built', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
-        if (e.side === 0) hud.feed('一座建筑完工', 'info');
+        if (e.side === 0 && !e.placed) hud.feed('一座建筑完工', 'info');
         break;
       case 'moveMark':
         if (e.x !== undefined && e.y !== undefined) fx.mark(e.x, e.y, e.forced ?? false);
@@ -400,6 +408,14 @@ function drainEvents(): void {
   }
   world.events.length = 0;
   setBattleIntensity(Math.min(1, combat / 10));
+  // 三人局：己方城堡被毁即出局。模拟继续（另两方分胜负），但玩家对局到此为止——
+  // 此前 alive[0]=false 而 gameOver=null，玩家被晾在死局里看 AI 互殴
+  if (state === 'play' && !world.gameOver && !world.alive[0]) {
+    state = 'over';
+    input.cancelMode();
+    hud.showResult(1, world, '你的城堡已陷落 —— 出局');
+    play('lose');
+  }
   if (ended && world.gameOver && state !== 'over') {
     state = 'over';
     input.cancelMode();

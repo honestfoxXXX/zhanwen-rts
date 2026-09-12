@@ -19,6 +19,7 @@ const P_WAVE_POP = ZW_PLAYERS === 3 ? 24 : 50;
 
 export function playerThink(w: World): void {
   const side = 0 as const;
+  if (!w.alive[side]) return; // 出局后不再指挥（sim 已拒绝指令，这里省掉无效遍历）
   const myB = w.buildings.filter(b => b.side === side && !b.dead);
   const hq = myB.find(b => b.type === 'hq');
   if (!hq) return;

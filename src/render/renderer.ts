@@ -46,10 +46,13 @@ let grainCanvas: HTMLCanvasElement | null = null;
 let grainInit = false;
 
 function initPostFX(cssW: number, cssH: number): void {
-  if (!sceneCanvas || sceneCanvas.width !== Math.round(cssW) || sceneCanvas.height !== Math.round(cssH)) {
+  // 跟随 DPR：此前离屏画布按 CSS 尺寸创建再放大，高分屏上世界比 DOM HUD 模糊一档
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  const pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
+  if (!sceneCanvas || sceneCanvas.width !== pw || sceneCanvas.height !== ph) {
     sceneCanvas = document.createElement('canvas');
-    sceneCanvas.width = Math.round(cssW);
-    sceneCanvas.height = Math.round(cssH);
+    sceneCanvas.width = pw;
+    sceneCanvas.height = ph;
   }
 }
 
@@ -783,9 +786,10 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   sctx.clearRect(0, 0, cam.cssW, cam.cssH);
   ctx.clearRect(0, 0, cam.cssW, cam.cssH);
 
-  // 场景渲染到离屏画布
+  // 场景渲染到离屏画布（DPR：主画布像素 = CSS × dpr，离屏必须同分辨率才不糊）
+  const sceneDpr = sceneCanvas!.width / Math.max(1, cam.cssW);
   sctx.save();
-  sctx.scale(cam.scale, cam.scale);
+  sctx.scale(cam.scale * sceneDpr, cam.scale * sceneDpr);
   sctx.translate(-cam.x, -cam.y);
 
   if (bgCanvas) sctx.drawImage(bgCanvas, 0, 0, MAP_W, MAP_H);
@@ -992,7 +996,10 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
     const ux = dx / d, uy = dy / d;
     const k = Math.max(0, Math.min(1, p.t / p.dur));
-    const lift = Math.sin(k * Math.PI) * (p.arrow ? 9 : 6);
+    // 投石车 lob：高抛物线（弧高随射程），普通弹仍是低平弹道
+    const lift = p.lob
+      ? Math.sin(k * Math.PI) * Math.min(72, 16 + d * 0.05)
+      : Math.sin(k * Math.PI) * (p.arrow ? 9 : 6);
     // 地面影子
     sctx.fillStyle = 'rgba(0,0,0,0.16)';
     sctx.beginPath();
@@ -1000,6 +1007,19 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     sctx.fill();
     sctx.save();
     sctx.translate(0, -lift);
+    if (p.lob) {
+      // 石弹：暗色圆石 + 高光，落地感来自影子随弧高收缩
+      sctx.fillStyle = '#57544d';
+      sctx.beginPath();
+      sctx.arc(p.x, p.y, 3.4, 0, Math.PI * 2);
+      sctx.fill();
+      sctx.fillStyle = 'rgba(220,214,200,0.55)';
+      sctx.beginPath();
+      sctx.arc(p.x - 1, p.y - 1.2, 1.1, 0, Math.PI * 2);
+      sctx.fill();
+      sctx.restore();
+      continue;
+    }
     if (p.arrow) {
       sctx.strokeStyle = SIDE[p.side];
       sctx.lineWidth = 1.6;
@@ -1086,8 +1106,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   fxList.draw(sctx);
   sctx.restore();
 
-  // ---- 后处理：场景合成到屏幕 ----
-  ctx.drawImage(sceneCanvas!, 0, 0);
+  // ---- 后处理：场景合成到屏幕（源是 dpr 分辨率，目标按 CSS 尺寸绘制）----
+  ctx.drawImage(sceneCanvas!, 0, 0, cam.cssW, cam.cssH);
   // D2 昼夜循环：10 分钟一昼夜。黄昏暖橙 → 夜晚冷蓝 → 黎明回暖（设置可关）
   if (settings.dayNight) {
     const phase = (w.time % 600) / 600;

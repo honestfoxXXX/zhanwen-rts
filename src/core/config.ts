@@ -49,8 +49,11 @@ export const BUILDING_DEFS: Record<BuildingType, import('./types').BuildingDef> 
   // 科技建筑：解锁高阶兵种（地图上可袭击的目标——拆工坊=掐死对方 T3）
   smithy: { name: '军械库', cost: 400, hp: 650, buildTime: 14, half: 30, income: 0, weapon: null },
   workshop: { name: '攻城工坊', cost: 900, hp: 900, buildTime: 20, half: 30, income: 0, weapon: null },
-  // 中原专属：不占矿点的第二经济（经济纵深，矿被拆仍有底线收入）
-  farm: { name: '农田', cost: 60, hp: 200, buildTime: 6, half: 30, income: 3, weapon: null },
+  // 中原专属：不占矿点的第二经济（经济纵深，矿被拆仍有底线收入）。
+  // 60 金/+3/s 回本 26s 反超矿（30s）且无矿点上限——农田从"底线"变"最优"，抢矿动力被瓦解
+  // （隔离实验：同资金只铺农田 120s 收入 292/s vs 只抢矿 68/s）。120 金把回本期压到 46s：
+  // 安全但低效，主经济仍然必须去抢矿。单变量校准，勿同时动收入/人口/前置。
+  farm: { name: '农田', cost: 120, hp: 200, buildTime: 6, half: 30, income: 3, weapon: null },
 };
 
 /** 一方的出生点：主基地位置 + 可建造区域（tile 坐标，含边界） */
@@ -346,7 +349,7 @@ export const CIVS: Record<CivId, CivDef> = {
     mineCost: 100, mineHpMul: 1.0, mineUpgradable: false, mineMaxLevel: 0, mineUpgradeCost: 0,
     ai: {
       wavePopMul: 0.8, waveCdMul: 1.2, waveMaxMul: 1.1,
-      raidMode: false, towerTarget: 4, farmTarget: 8,
+      raidMode: false, towerTarget: 4, farmTarget: 4,
       defendRadius: 300,
       armyMix: { infantry: 0.35, archer: 0.2, pikeman: 0.2, heavy: 0.15, champion: 0.1 },
     },

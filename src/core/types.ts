@@ -61,6 +61,11 @@ export interface Unit {
   pathI: number;
   repathT: number;
   stuckT: number;
+  /** 冲锋原点：下令移动时记录，消费时要求实际位移——防原地刷令白得首攻加成 */
+  chargeX?: number;
+  chargeY?: number;
+  /** 最后一次受击的世界时间（脱战再生判定用） */
+  lastHit?: number;
   lastX: number; lastY: number;
   /** 冲锋判定：移动 ≥1s 后置 true，首攻消费后重置 */
   charged: boolean;
@@ -118,6 +123,8 @@ export interface SimEvent {
   melee?: boolean;
   /** moveMark 事件附带：强制移动(true)用白色落点标记与普通移动区分 */
   forced?: boolean;
+  /** built 事件附带：placed=true 是下单放置瞬间，缺省是施工完成 */
+  placed?: boolean;
   /** shot 事件附带：本次伤害期望值（表现层飘伤害数字） */
   dmg?: number;
   /** shot 事件附带：攻击来源（表现层选音效：投石三段 / 塔 / 单位） */

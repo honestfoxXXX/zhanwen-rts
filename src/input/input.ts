@@ -414,7 +414,9 @@ export class Input {
     }
     const ok = this.hooks.command({ type: 'build', side: 0, building: g.type, x: g.x, y: g.y });
     if (ok && shift) {
-      this.moveGhost(g.x, g.y); // 保持放置模式，幽灵停在原地微调
+      // 保持放置模式：moveGhost 吃屏幕坐标，g.x/g.y 是世界坐标——此前直接传导致幽灵跳位
+      const sp = this.cam.worldToScreen(g.x, g.y);
+      this.moveGhost(sp.x, sp.y);
     } else if (ok || !shift) {
       this.cancelMode();
     }

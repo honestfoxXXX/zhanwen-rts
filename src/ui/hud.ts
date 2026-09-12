@@ -162,6 +162,15 @@ export class Hud {
   }
 
   get difficulty(): Difficulty { return this.diff; }
+  get selectedPlayers(): number { return this.players; }
+
+  /** 新开局清空瞬态缓存：目标链/选中面板的 key 基于旧世界状态，编队已由 main 清理 */
+  resetForNewGame(): void {
+    this.chainKey = '';
+    this.selPanelKey = '';
+    this.els.feed.textContent = '';
+    this.els.selPanel.classList.add('hidden');
+  }
 
   /* ---- 热键入口：与卡槽点击完全同路径，保证可用性与禁用逻辑一致 ---- */
   buildByHotkey(t: BuildingType): void {
@@ -200,14 +209,15 @@ export class Hud {
     this.els.pause.classList.toggle('hidden', !v);
   }
 
-  showResult(winner: Side | null, world: World): void {
+  showResult(winner: Side | null, world: World, reasonOverride?: string): void {
     const win = winner === 0;
     const draw = winner === null;
     this.els.resultTitle.textContent = win ? '胜 利' : draw ? '平 局' : '战 败';
     this.els.resultTitle.className = win ? 'win' : 'lose';
     const m = Math.floor(world.time / 60), s = Math.floor(world.time % 60);
     // 胜因：王冠占领 / 武力征服 / 超时
-    let reason = '';
+    let reason = reasonOverride ? ' · ' + reasonOverride : '';
+    if (!reason) {
     if (world.players > 2 && world.crown.t >= 45 && winner !== null) {
       reason = winner === 0 ? ' · ⚜ 王冠之地占领成功' : ' · 敌方占领王冠之地';
     } else if (winner !== null) {
@@ -215,13 +225,14 @@ export class Hud {
     } else {
       reason = ' · 超时平局';
     }
+    }
     this.els.resultStats.textContent =
       `用时 ${m}:${String(s).padStart(2, '0')} · 难度 ${DIFFICULTY[world.difficulty].label}${reason}`;
 
     // 战报：给玩家一个"再来一局"的理由 —— 看得出这局输在哪
     const st = world.stats;
     const rows: [string, string][] = [['歼灭敌军', String(st.kills[0])]];
-    for (let s = 1; s < world.players; s++) rows.push([`${SIDE_LABEL[s]}阵亡`, String(st.kills[s])]);
+    for (let s = 1; s < world.players; s++) rows.push([`歼灭${SIDE_LABEL[s]}`, String(st.kills[s])]);
     rows.push(['累计造兵', String(st.trained[0])]);
     rows.push([`峰值兵力`, `${st.peakPop[0]}/${popCapOf(world, 0)}`]);
     rows.push(['黄金总收入', String(Math.round(st.earned[0]))]);
@@ -291,9 +302,11 @@ export class Hud {
 
   /* ---- C1 目标链：随局势自动打勾，给新手一条明确的主线 ---- */
   private chainKey = '';
-  updateGoalChain(world: World): void {
+  /** 目标链与顶栏 goal 共用同一份步骤推导——此前两套逻辑各自为政，开局提示互相矛盾 */
+  private chainSteps(world: World): { steps: { text: string; done: boolean }[]; nowIdx: number } {
     const own = world.buildings.filter(b => b.side === 0 && !b.dead);
-    const has = (t: string) => own.some(b => b.type === t);
+    // 施工中的建筑不算完成（此前 buildT>0 也打勾）
+    const has = (t: string) => own.some(b => b.type === t && b.buildT <= 0);
     const pop = world.popUsed[0];
     const steps: { text: string; done: boolean }[] = [
       { text: '占领一座金矿（Q）', done: has('mine') },
@@ -309,7 +322,14 @@ export class Hud {
       steps.push({ text: '摧毁敌方城堡', done: false });
     }
     const nowIdx = steps.findIndex(x => !x.done);
-    const key = steps.map(x => (x.done ? '1' : '0')).join('') + String(nowIdx);
+    return { steps, nowIdx };
+  }
+
+  updateGoalChain(world: World): void {
+    const { steps, nowIdx } = this.chainSteps(world);
+    const pop = world.popUsed[0];
+    // 缓存键必须含人数：否则 "训练部队 3/12" 的数字永远停在键首次生成时的值
+    const key = steps.map(x => (x.done ? '1' : '0')).join('') + String(nowIdx) + ':' + pop;
     if (key === this.chainKey) return; // 状态没变不重绘
     this.chainKey = key;
     this.els.chainList.textContent = '';
@@ -350,9 +370,10 @@ export class Hud {
           const div = document.createElement('div');
           div.className = 'grp';
           const frac = g.max ? g.hp / g.max : 0;
+          const cv = CIVS[world.civs[0]];
           div.innerHTML =
             `<div class="nm">${UNIT_DEFS[t as UnitType].name}<b>×${g.n}</b></div>` +
-            `<div class="st">攻${d.damage} · 程${d.range} · 速${d.speed}</div>` +
+            `<div class="st">攻${Math.round(d.damage * cv.unitDmgMul)} · 程${d.range} · 速${Math.round(d.speed * cv.unitSpeedMul)}</div>` +
             `<div class="hpbar"><i style="width:${(frac * 100).toFixed(0)}%;background:${frac > 0.6 ? '#9db86a' : frac > 0.3 ? '#d9a24a' : '#f87171'}"></i></div>`;
           this.paintIconAt(div, 'unit', t as UnitType);
           panel.appendChild(div);
@@ -597,16 +618,12 @@ export class Hud {
     this.els.alertBanner.classList.add('hidden');
   }
 
-  /** 动态目标：告诉玩家这会儿该干什么，而不是只给一次性的静态提示 */
+  /** 动态目标：直接取目标链的当前步骤，两处提示永远一致 */
   private goalText(world: World): string {
-    const own = world.buildings.filter(b => b.side === 0 && !b.dead);
-    if (!own.some(b => b.type === 'barracks')) return '目标：先建一座军营';
-    if (own.filter(b => b.type === 'mine').length < 2) return '目标：占一处金矿 —— 黄金就是兵力';
-    if (world.popUsed[0] < 12) return `目标：攒兵 ${world.popUsed[0]}/12`;
-    const foes = world.alive.filter(Boolean).length - 1;
-    return world.players > 2
-      ? `目标：进军，扫平剩余 ${foes} 座城堡`
-      : '目标：进军，摧毁敌方城堡';
+    const { steps, nowIdx } = this.chainSteps(world);
+    const cur = steps[nowIdx];
+    if (!cur) return `目标：进军，扫平剩余 ${world.alive.filter(Boolean).length - 1} 方`;
+    return `目标：${cur.text.replace(/（.*?）/g, '')}`;
   }
 
   /** 点选自家建筑后的升级行：箭塔（中原）与金矿（骑士团）各自显示等级/费用 */
