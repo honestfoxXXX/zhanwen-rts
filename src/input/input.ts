@@ -31,6 +31,7 @@ interface PointerRec {
   x: number; y: number;
   button: number;
   shift: boolean;
+  ctrl: boolean;
   moved: boolean;
   panning: boolean;
   minimap: boolean;
@@ -71,14 +72,14 @@ export class Input {
     window.addEventListener('keyup', e => this.keys.delete(e.key));
   }
 
-  /** 每帧调用：方向键平移 + 鼠标边缘滚动（WASD 让位给 A 攻击移动） */
+  /** 每帧调用：WASD/方向键平移 + 鼠标边缘滚动 */
   update(dt: number): void {
     const speed = 620;
     let dx = 0, dy = 0;
-    if (this.keys.has('ArrowLeft')) dx -= 1;
-    if (this.keys.has('ArrowRight')) dx += 1;
-    if (this.keys.has('ArrowUp')) dy -= 1;
-    if (this.keys.has('ArrowDown')) dy += 1;
+    if (this.keys.has('a') || this.keys.has('ArrowLeft')) dx -= 1;
+    if (this.keys.has('d') || this.keys.has('ArrowRight')) dx += 1;
+    if (this.keys.has('w') || this.keys.has('ArrowUp')) dy -= 1;
+    if (this.keys.has('s') || this.keys.has('ArrowDown')) dy += 1;
     if (dx !== 0 || dy !== 0) this.cam.pan(dx * speed * dt, dy * speed * dt);
     // 鼠标边缘滚动：桌面端把鼠标推向画面边缘即可平移（触屏无此行为；设置可关）
     if (this.hover && settings.edgeScroll) {
@@ -92,7 +93,8 @@ export class Input {
   }
 
   private onKey(e: KeyboardEvent): void {
-    this.keys.add(e.key);
+    // 单字符键统一小写：Shift+W 也得能平移
+    this.keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
     if (e.key === 'Escape') this.hooks.onEscape();
     if (e.key === '+' || e.key === '=') this.cam.zoomAt(1.2, this.cam.cssW / 2, this.cam.cssH / 2);
     if (e.key === '-' || e.key === '_') this.cam.zoomAt(1 / 1.2, this.cam.cssW / 2, this.cam.cssH / 2);
@@ -107,7 +109,7 @@ export class Input {
     const p = this.evPos(e);
     const rec: PointerRec = {
       id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y,
-      button: e.button, shift: e.shiftKey, moved: false, panning: false,
+      button: e.button, shift: e.shiftKey, ctrl: e.ctrlKey, moved: false, panning: false,
       minimap: isInsideMinimap(p.x, p.y, this.cam.cssW, this.cam.cssH),
       pointerType: e.pointerType,
     };
@@ -231,7 +233,7 @@ export class Input {
 
     if (!rec.moved) {
       const rightClick = rec.button === 2;
-      this.onTap(world, p.x, p.y, rightClick, rec.shift, rec.pointerType);
+      this.onTap(world, p.x, p.y, rightClick, rec.shift, rec.ctrl, rec.pointerType);
     }
   }
 
@@ -268,7 +270,7 @@ export class Input {
     }
   }
 
-  private onTap(world: World, sx: number, sy: number, rightClick: boolean, shift: boolean, pointerType: string): void {
+  private onTap(world: World, sx: number, sy: number, rightClick: boolean, shift: boolean, ctrl: boolean, pointerType: string): void {
     const wp = this.cam.screenToWorld(sx, sy);
 
     // 放置模式
@@ -295,8 +297,8 @@ export class Input {
       return;
     }
 
-    // A + 左键 = 攻击移动：忽略点选，直接下令（移动沿途自动接战，等于攻击移动语义）
-    if (this.keys.has('a') && !rightClick) {
+    // Ctrl + 左键 = 攻击移动（与右键同语义的习惯键位；A 已还给镜头平移）
+    if (ctrl && !rightClick) {
       this.ui.buildingSel = null;
       this.orderAt(world, wp.x, wp.y, false);
       return;

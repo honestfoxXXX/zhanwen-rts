@@ -533,7 +533,7 @@ document.addEventListener('visibilitychange', () => {
 //   空格 跳交战/军队 · C 回城堡 · Tab 循环告警点 · P 暂停
 //   Q/E/R/T/Y/B 建造 · 1-7 出兵（按卡槽可见顺序） · F 全选 · G 集结
 //   U 升级箭塔 · I 升级金矿 · H 固守 · X 撤退 · Esc 取消
-//   A+左键 攻击移动 · Shift+右键/双指轻点 强制移动
+//   Ctrl+左键 攻击移动 · Shift+右键/双指轻点 强制移动 · WASD 平移
 /* ---- B2 编队：Ctrl+1..5 编队，1..5 召回（双击跳质心），空槽回落出兵热键 ---- */
 const groups: number[][] = [[], [], [], [], []];
 let lastGroupKey = '';
