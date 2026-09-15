@@ -11,7 +11,7 @@
  */
 import { BUILDING_DEFS, CROWN_WINDOW, DIFFICULTY, MAP_H, MAPS, MAP_W, UNIT_DEFS } from '../src/core/config';
 import { createWorld, issueCommand, stepWorld } from '../src/core/sim';
-import { playerThink } from './scriptedPlayer';
+import { playerThink, setForcedPlayers } from '../src/scriptedPlayer';
 import type { Difficulty, UnitType, World } from '../src/core/types';
 
 const STEP = 1 / 60;
@@ -19,6 +19,7 @@ const STEP = 1 / 60;
 const forcedMap = process.env.ZW_MAP !== undefined ? Number(process.env.ZW_MAP) : null;
 // 跑批默认按 2 人图校准；ZW_PLAYERS=3 时才在三方图里测，避免把 1v2 和 1v1 混在一起统计
 const forcedPlayers = process.env.ZW_PLAYERS !== undefined ? Number(process.env.ZW_PLAYERS) : 2;
+setForcedPlayers(forcedPlayers);
 const mapPool = MAPS
   .map((m, i) => [m, i] as const)
   .filter(([m]) => m.players === forcedPlayers)

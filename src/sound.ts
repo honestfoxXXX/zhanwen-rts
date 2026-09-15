@@ -249,6 +249,7 @@ function startAmbient(): void {
 
 /** 战斗激烈度（0~1）：由主循环按事件密度更新；压低环境声 */
 export function setBattleIntensity(v: number): void {
+  updateDroneIntensity(v);
   battleLevel = Math.max(0, Math.min(1, v));
   const wg = windGain;
   if (wg && ac) wg.gain.setTargetAtTime(0.03 * (1 - battleLevel * 0.75), ac.currentTime, 0.4);
@@ -259,8 +260,46 @@ const SCALE = [146.83, 174.61, 196.0, 220.0, 261.63, 293.66];
 let musicIdx = 2;
 let musicNext = 0;
 
+/** 战场低音铺底：双失谐锯齿过低通，战斗烈度抬升滤波频率——给整段音乐一个"地面" */
+function startDrone(): void {
+  if (!ac || !musicBus) return;
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 160;
+  lp.Q.value = 4;
+  const g = ac.createGain();
+  g.gain.value = 0.055;
+  for (const [f, det] of [[55, 0], [55.6, 6]] as const) {
+    const o = ac.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = f;
+    o.detune.value = det;
+    o.connect(lp);
+    o.start();
+  }
+  // 烈度→滤波开合：战斗越激烈低音越"顶"
+  const lfo = ac.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.value = 0.12;
+  const lfoG = ac.createGain();
+  lfoG.gain.value = 40;
+  lfo.connect(lfoG); lfoG.connect(lp.frequency);
+  lfo.start();
+  lp.connect(g); g.connect(musicBus);
+  droneFilter = lp;
+}
+
+/** 战斗烈度实时反馈：按 battleLevel 开合低通（在 setBattleIntensity 里驱动） */
+function updateDroneIntensity(level: number): void {
+  if (!droneFilter) return;
+  const target = 160 + level * 420;
+  droneFilter.frequency.setTargetAtTime(target, ac!.currentTime, 0.6);
+}
+let droneFilter: BiquadFilterNode | null = null;
+
 function startMusic(): void {
   if (musicTimer !== null) return;
+  startDrone();
   musicTimer = window.setInterval(() => {
     if (!ac || !master || !musicOn) return;
     const now = ac.currentTime;
@@ -272,6 +311,11 @@ function startMusic(): void {
       if (battle) {
         drum(musicNext + 0.42, 0.06);
         if (Math.random() < 0.5) pluck(SCALE[Math.max(0, SCALE.length - 2)], 0.03, musicNext + 0.21);
+        // 烈度爬升：双鼓连击 + 低音 tom，把"打起来了"写进节奏
+        if (battleLevel > 0.55) {
+          drum(musicNext + 0.2, 0.045);
+          drum(musicNext + 0.63, 0.05);
+        }
       }
       musicNext += battle ? 0.85 : 2.4;
     }
@@ -348,15 +392,28 @@ export function play(name: SoundName, vol = 1, delay = 0): void {
       noiseAt(0.03, 1200, 500, 0.05 * v);
       tone(jitter(880), jitter(1080), 0.045, 'sine', 0.035 * v, 0.02);
       break;
-    case 'win': // 胜利：拨弦号角琶音（D 大）
-      [293.66, 369.99, 440, 587.33].forEach((f, i) => pluck(f, 0.1, ac!.currentTime + i * 0.14, sfxBus));
-      pluck(587.33, 0.08, ac!.currentTime + 0.62, sfxBus);
+    case 'win': { // 胜利：定音鼓滚奏 → 全奏号角（D 大三和弦叠五度）+ 高音闪层
+      const t0 = ac.currentTime;
+      for (let i = 0; i < 6; i++) drum(t0 + i * 0.11, 0.05 + i * 0.012); // 滚奏渐强
+      tone(146.83, 146.83, 1.6, 'sawtooth', 0.05, 0.72, 0.08, 900);      // 低音主持续
+      [293.66, 369.99, 440, 587.33, 880].forEach((f, i) =>
+        tone(f, f, 1.1, 'sawtooth', 0.045, 0.72 + i * 0.07, 0.02, 2400));
+      [293.66, 440, 587.33].forEach((f, i) => pluck(f, 0.09, t0 + 0.78 + i * 0.13, sfxBus));
+      noiseAt(0.8, 6000, 9000, 0.03, 0.72, 'highpass', 1); // 亮片层
       break;
-    case 'lose': // 战败：下行拨弦
-      [392, 330, 262, 196].forEach((f, i) => pluck(f, 0.09, ac!.currentTime + i * 0.18, sfxBus));
+    }
+    case 'lose': { // 战败：低音塌落 + 小调下行号角
+      const t0 = ac.currentTime;
+      tone(110, 52, 1.5, 'sawtooth', 0.09, 0, 0.05, 700);
+      noiseAt(0.9, 500, 120, 0.1, 0, 'lowpass', 1);
+      [293.66, 277.18, 246.94, 220].forEach((f, i) =>
+        tone(f, f * 0.985, 0.5, 'sawtooth', 0.04, 0.3 + i * 0.3, 0.04, 1500));
       break;
-    case 'draw': // 平局：交替拨弦
-      [440, 392, 440, 392].forEach((f, i) => pluck(f, 0.08, ac!.currentTime + i * 0.16, sfxBus));
+    }
+    case 'draw': // 平局：中性双音
+      tone(220, 220, 0.9, 'sawtooth', 0.04, 0, 0.05, 1600);
+      tone(293.66, 293.66, 0.9, 'sawtooth', 0.035, 0.1, 0.05, 1600);
+      [440, 392].forEach((f, i) => pluck(f, 0.08, ac!.currentTime + 0.3 + i * 0.3, sfxBus));
       break;
   }
 }

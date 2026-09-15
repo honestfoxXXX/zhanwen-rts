@@ -43,6 +43,12 @@ export class Camera {
     this.clamp();
   }
 
+  /** 直接设一个目标视口宽（世界单位），供菜单演示镜头等外部用途 */
+  setZoom(viewWidth: number): void {
+    this.scale = this.clampScale(this.cssW / Math.max(1, viewWidth));
+    this.clamp();
+  }
+
   /** 每帧调用：向缩放目标指数逼近，锚点下的世界坐标保持不动 */
   update(dt: number): void {
     if (this.zoomTarget === null) return;

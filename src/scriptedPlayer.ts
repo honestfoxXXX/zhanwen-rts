@@ -2,12 +2,15 @@
  * 脚本玩家：模拟一个"会玩但不算顶尖"的人类操作者，供平衡跑批与 3P 诊断探针共用。
  * 与 AI 同一套取位/科技攒钱机制；三人局残局会去质心抢王冠。
  */
-import { BUILDING_DEFS, CROWN_WINDOW, MAP_H, MAP_W, UNIT_DEFS } from '../src/core/config';
-import { findBuildSlot, issueCommand, type World } from '../src/core/sim';
-import { rngNext } from '../src/core/rng';
-import type { Side, UnitType } from '../src/core/types';
+import { BUILDING_DEFS, CROWN_WINDOW, MAP_H, MAP_W, UNIT_DEFS } from './core/config';
+import { findBuildSlot, issueCommand } from './core/sim';
+import type { World } from './core/types';
+import { rngNext } from './core/rng';
+import type { Side, UnitType } from './core/types';
 
-const ZW_PLAYERS = process.env.ZW_PLAYERS !== undefined ? Number(process.env.ZW_PLAYERS) : 2;
+// 默认按 2 人局；平衡脚本用 setForcedPlayers 改三人门槛（浏览器内无 process，不走环境变量）
+let forcedPlayers = 2;
+export function setForcedPlayers(n: number): void { forcedPlayers = n; }
 
 /** 建造位：与 AI 同一套「+y 指向质心」的偏移坐标系（由 findBuildSlot 旋转） */
 const P_BARRACKS: [number, number][] = [[160, 140], [-160, 140], [160, 260]];
@@ -15,7 +18,7 @@ const P_TOWERS: [number, number][] = [[80, 340], [-80, 340]];
 const P_MAX_MINES = 8;
 // 三人图的贴身消耗战里兵力攒不起来，出击门槛也要跟着人数走；
 // 1v1 大图上防守方援军近在咫尺，半军出击就是送死 —— 要攒到接近满编
-const P_WAVE_POP = ZW_PLAYERS === 3 ? 24 : 50;
+const P_WAVE_POP = forcedPlayers === 3 ? 24 : 50;
 
 export function playerThink(w: World): void {
   const side = 0 as const;

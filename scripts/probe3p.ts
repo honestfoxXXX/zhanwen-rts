@@ -5,7 +5,7 @@
  */
 import { UNIT_DEFS } from '../src/core/config';
 import { createWorld, stepWorld, type World, type Side } from '../src/core/sim';
-import { playerThink } from './scriptedPlayer';
+import { playerThink } from '../src/scriptedPlayer';
 import type { Difficulty } from '../src/core/types';
 
 const STEP = 1 / 60;

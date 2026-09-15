@@ -9,6 +9,7 @@ import * as minimap from './render/minimap';
 import { Input } from './input/input';
 import type { UIState } from './input/input';
 import { Hud, DENY_TEXT } from './ui/hud';
+import { playerThink } from './scriptedPlayer';
 import { initAudio, isMuted, play, setBattleIntensity, toggleMute, toggleMusic } from './sound';
 import { notifyHit, tickFlash, damageNumbersOn } from './render/feedback';
 import { settings } from './settings';
@@ -18,6 +19,7 @@ const frame = document.getElementById('frame') as HTMLDivElement;
 const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
 
 const cam = new Camera();
+const demoCam = new Camera();
 const fx = new Effects();
 const ui: UIState = { selection: [], buildingSel: null, mode: 'none', placing: null, ghost: null, boxRect: null, rallyFor: null };
 
@@ -52,11 +54,70 @@ function layout(): void {
   canvas.width = Math.round(fw * dpr);
   canvas.height = Math.round(fh * dpr);
   cam.resize(fw, fh);
+  demoCam.resize(fw, fh);
+  demoCam.setZoom(fw / 1050); // 菜单镜头：看到约 1/3 张图
 }
 window.addEventListener('resize', layout);
 layout();
 cam.resetZoom();
 cam.centerOn(MAP_W / 2, MAP_H / 2);
+
+/* ---------------- 菜单活战场：真实 AI 对战做背景，第一屏就是"战争在发生" ---------------- */
+
+let demoWorld: World | null = null;
+let demoAcc = 0;
+const DEMO_MAP = 0; // gate
+
+function seedDemoWorld(): void {
+  const w = createWorld('normal', (Date.now() & 0x7fffffff) || 4242, DEMO_MAP);
+  initRenderer(MAPS[DEMO_MAP]);
+  // 预跑 260s（典型对局 ~420s 收尾，留出活战场而不是结算前夕）：
+  // 菜单打开即有军队对撞，而不是从两家空城干瞪眼
+  let acc = 0;
+  for (let i = 0; i < 60 * 260 && !w.gameOver; i++) {
+    stepWorld(w, STEP);
+    acc += STEP;
+    if (acc >= 0.6) { acc = 0; playerThink(w); }
+    w.events.length = 0;
+  }
+  demoWorld = w;
+  fx.clear();
+  // 开镜即吸附战团（平滑跟随从这一帧起步，避免从地图角落慢慢爬）
+  const f0 = demoFocus(w);
+  if (f0) demoCam.centerOn(f0.x, f0.y);
+}
+
+/** 最大战团：菜单镜头追这里，而不是两军质心（那儿常常是空地） */
+function demoFocus(w: World): { x: number; y: number } | null {
+  if (!w.units.length) return null;
+  let bx = 0, by = 0, bn = -1;
+  for (const u of w.units) {
+    let n = 0;
+    for (const v of w.units) {
+      const dx = u.x - v.x, dy = u.y - v.y;
+      if (dx * dx + dy * dy < 300 * 300) n++;
+    }
+    if (n > bn) { bn = n; bx = u.x; by = u.y; }
+  }
+  return bn > 0 ? { x: bx, y: by } : null;
+}
+
+/** 菜单帧推进：0.85 倍速 + 镜头平滑追最大战团；打完了自动换下一场 */
+function updateDemoWorld(dtReal: number): void {
+  if (!demoWorld) { seedDemoWorld(); return; }
+  if (demoWorld.gameOver) { demoWorld = null; return; }
+  demoAcc += Math.min(0.1, dtReal) * 0.85;
+  while (demoAcc >= STEP) {
+    stepWorld(demoWorld, STEP);
+    demoAcc -= STEP;
+  }
+  demoWorld.events.length = 0;
+  const f = demoFocus(demoWorld);
+  if (f) {
+    const cx = demoCam.x + demoCam.viewW / 2, cy = demoCam.y + demoCam.viewH / 2;
+    demoCam.centerOn(cx + (f.x - cx) * 0.045, cy + (f.y - cy) * 0.045);
+  }
+}
 
 /* ---------------- HUD 与输入接线 ---------------- */
 
@@ -160,6 +221,7 @@ let civSel: CivId = 'central';
 
 function startGame(diff: World['difficulty'], players = 2): void {
   initAudio();
+  demoWorld = null; // 菜单战场退役
   // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建。
   // 轮换池只取「与所选人数匹配」的图，否则 1v1 和 1v2 会被混在一起统计。
   const seed = (Date.now() & 0x7fffffff) || 12345;
@@ -268,17 +330,19 @@ function drawAlertGlow(g: CanvasRenderingContext2D): void {
   g.save();
   g.globalAlpha = 0.55 * k;
   if (onScreen) {
-    const w = Math.min(26, cam.cssW * 0.09);
-    const edges: [number, number, number, number][] = [
-      [0, 0, 0, w], [0, cam.cssH - w, 0, cam.cssH], [0, 0, w, 0], [cam.cssW - w, 0, cam.cssW, 0],
-    ];
-    for (const [x0, y0, x1, y1] of edges) {
-      const grad = g.createLinearGradient(x0, y0, x1, y1);
-      grad.addColorStop(0, 'rgba(248,113,113,0.85)');
-      grad.addColorStop(1, 'rgba(248,113,113,0)');
-      g.fillStyle = grad;
-      g.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0) || cam.cssW, Math.abs(y1 - y0) || cam.cssH);
-    }
+    // 屏幕内的战况：只给轻量全屏脉动 + 交战点红晕——四条边全亮会把整幅战场染红，
+    // 玩家反而看不清"正在发生"的战斗本身（实测会战帧全屏红）
+    g.globalAlpha = 0.14 * k;
+    g.fillStyle = 'rgba(248,113,113,0.9)';
+    g.fillRect(0, 0, cam.cssW, cam.cssH);
+    const ex = Math.max(30, Math.min(cam.cssW - 30, sx));
+    const ey = Math.max(30, Math.min(cam.cssH - 30, sy));
+    const grad = g.createRadialGradient(ex, ey, 0, ex, ey, 110);
+    grad.addColorStop(0, 'rgba(248,113,113,0.4)');
+    grad.addColorStop(1, 'rgba(248,113,113,0)');
+    g.globalAlpha = 0.7 * k;
+    g.fillStyle = grad;
+    g.fillRect(ex - 110, ey - 110, 220, 220);
   } else {
     // 方向边缘：把威胁方向钉在对应边上
     const cx = cam.cssW / 2, cy = cam.cssH / 2;
@@ -420,8 +484,20 @@ function drainEvents(): void {
     state = 'over';
     input.cancelMode();
     const winner = world.gameOver.winner;
-    hud.showResult(winner, world);
+    // 仪式感：结算弹出的前一秒半，镜头推向胜方（或己方）城堡 + 号角先行——
+    // 胜负是全游戏最强的情绪点，此前是"啪"一下弹文本框
+    const focus = world.buildings.find(b =>
+      b.type === 'hq' && !b.dead && b.side === (winner !== null ? winner : 0));
+    if (focus) {
+      cam.centerOn(focus.x, focus.y);
+      cam.zoomAt(1.7, cam.cssW / 2, cam.cssH / 2);
+    }
     play(winner === 0 ? 'win' : winner === null ? 'draw' : 'lose');
+    const wEnd = world;
+    setTimeout(() => {
+      hud.showResult(winner, wEnd);
+      cam.resetZoom();
+    }, 1500);
   }
 }
 
@@ -437,6 +513,7 @@ function loop(ts: number): void {
   lastTs = ts;
 
   cam.update(dtReal);
+  if (state === 'menu') updateDemoWorld(dtReal);
   if (state === 'play' && world && !world.gameOver) {
     input.update(dtReal);
     acc += dtReal;
@@ -487,8 +564,14 @@ function renderFrame(): void {
     rallyBtn.classList.toggle('armed', ui.mode === 'rally');
     for (const [t, btn] of buildBtns) btn.classList.toggle('armed', ui.mode === 'place' && ui.placing === t);
   } else {
-    ctx.fillStyle = '#070c16';
-    ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+    // 菜单：背后是一场真实进行中的 AI 对战
+    if (demoWorld) {
+      input.refreshGhost();
+      draw(ctx, demoWorld, demoCam, { selection: [], mode: 'none', ghost: null, boxRect: null }, fx, { chrome: false });
+    } else {
+      ctx.fillStyle = '#070c16';
+      ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+    }
   }
 }
 

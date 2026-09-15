@@ -34,13 +34,13 @@ export class Effects {
   dieEvent(x: number, y: number, r: number, side: Side, big = false): void {
     this.stain(x, y, big ? r * 1.5 : r * 1.15);
     this.add({ kind: 'ring', x, y, dur: 0.4, r, color: SIDE_COLORS[side], big, vx: 0, vy: 0 });
-    // 内圈反向收拢，两圈一扩一缩，比单环更有"爆开"的层次
     this.add({ kind: 'shock', x, y, dur: 0.3, r: r + 10, color: 'rgba(255,255,255,0.9)', big, vx: 0, vy: 0 });
-    // 四散碎片：体型大的单位碎得更夸张
-    for (let i = 0; i < (big ? 7 : 4); i++) {
-      const a = (i / 4) * Math.PI * 2 + 0.6;
-      const sp = 60 + (i % 2) * 30;
-      this.add({ kind: 'debris', x, y, dur: 0.45, r: 1.8, color: SIDE_COLORS[side], big: false, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
+    // 碎片带抛物线（vy 有回落感），量与尺寸加大——死亡要有"碎了一地"的重量
+    const n = big ? 10 : 6;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + 0.6;
+      const sp = 70 + (i % 3) * 38;
+      this.add({ kind: 'debris', x, y, dur: 0.55, r: big ? 3.2 : 2.4, color: SIDE_COLORS[side], big: false, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 26 });
     }
   }
 

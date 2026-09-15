@@ -143,12 +143,14 @@ function drawCloudShadows(g: CanvasRenderingContext2D, time: number): void {
 }
 
 /** D3 地貌主题：top/mid/bot 基底渐变 + blobA/blobB 色斑两族色相 */
+// 主题色带饱和度校准：过暗过灰时单位与地面同色系（实测会战帧"红点陷在棕地里"），
+// 每档整体提亮约 12% 并拉高色度，让阵营色有对比底
 const THEMES: Record<string, { top: string; mid: string; bot: string; blobA: string; blobB: string }> = {
-  meadow: { top: '#3d5732', mid: '#33492b', bot: '#2a3f24', blobA: '122,158,78', blobB: '122,88,52' },
-  loess: { top: '#5d5138', mid: '#4f452f', bot: '#423a27', blobA: '166,146,88', blobB: '124,98,58' },
-  autumn: { top: '#5a4d2e', mid: '#4d422a', bot: '#3e3522', blobA: '172,132,62', blobB: '122,82,46' },
-  rock: { top: '#4a4d4a', mid: '#3e4240', bot: '#333634', blobA: '118,128,118', blobB: '88,94,88' },
-  moor: { top: '#39493c', mid: '#31403a', bot: '#29362f', blobA: '100,142,112', blobB: '92,82,56' },
+  meadow: { top: '#4a6c3c', mid: '#3e5c33', bot: '#34502b', blobA: '132,172,84', blobB: '136,96,56' },
+  loess: { top: '#6d5f40', mid: '#5d5236', bot: '#4e442c', blobA: '182,160,92', blobB: '138,106,60' },
+  autumn: { top: '#6d5c34', mid: '#5d4f2c', bot: '#4c4125', blobA: '192,148,64', blobB: '136,90,48' },
+  rock: { top: '#575c58', mid: '#494f4b', bot: '#3d4340', blobA: '128,140,128', blobB: '96,104,96' },
+  moor: { top: '#42594a', mid: '#384d41', bot: '#2f4136', blobA: '110,156,120', blobB: '102,90,58' },
 };
 
 /** 预渲染静态地面（地貌装饰 + 岩石 + 国境线 + 基地区）。换地图需要重新调用 */
@@ -779,7 +781,7 @@ function hpColor(k: number): string {
   return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
 }
 
-export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: RenderUI, fxList: { draw: (g: CanvasRenderingContext2D) => void }): void {
+export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: RenderUI, fxList: { draw: (g: CanvasRenderingContext2D) => void }, opts?: { chrome?: boolean }): void {
   initPostFX(cam.cssW, cam.cssH);
   initGrain();
   const sctx = sceneCanvas!.getContext('2d') as CanvasRenderingContext2D;
@@ -903,8 +905,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     }
   }
 
-  // 集结点（玩家）
+  const chrome = opts?.chrome !== false; // 菜单演示模式只关玩家专属 UI，世界照常画
   const r0 = w.rally[0];
+  if (chrome) {
   sctx.save();
   sctx.strokeStyle = 'rgba(201,162,39,0.8)';
   sctx.fillStyle = 'rgba(201,162,39,0.8)';
@@ -924,6 +927,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   sctx.closePath();
   sctx.fill();
   sctx.restore();
+
+  sctx.restore();
+  }
 
   // 建造区轮廓（放置模式提示：告诉玩家边界在哪）
   if (ui.mode === 'place') {
@@ -1117,11 +1123,11 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     else if (phase < 0.9) { dusk = 1; night = Math.min(1, (phase - 0.52) / 0.16); }
     else if (phase < 1.0) { night = 1 - (phase - 0.9) / 0.1; dusk = night; }
     if (dusk > 0) {
-      ctx.fillStyle = `rgba(255,140,60,${0.1 * dusk})`;
+      ctx.fillStyle = `rgba(255,150,70,${0.055 * dusk})`;
       ctx.fillRect(0, 0, cam.cssW, cam.cssH);
     }
     if (night > 0) {
-      ctx.fillStyle = `rgba(14,20,52,${0.3 * night})`;
+      ctx.fillStyle = `rgba(16,24,58,${0.2 * night})`;
       ctx.fillRect(0, 0, cam.cssW, cam.cssH);
     }
   }
@@ -1167,8 +1173,14 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   ctx.fillRect(0, 0, cam.cssW, cam.cssH);
   ctx.restore();
 
-  // 小地图雷达
-  drawMinimap(ctx, w, cam);
+  // 小地图雷达（菜单演示不画）
+  if (chrome) drawMinimap(ctx, w, cam);
+
+  // 菜单压暗：给 DOM 文字让位，但保留战场可读（此前 0.42 太重，实测黑成剪影）
+  if (!chrome) {
+    ctx.fillStyle = 'rgba(10,8,4,0.28)';
+    ctx.fillRect(0, 0, cam.cssW, cam.cssH);
+  }
 }
 
 function hpBar(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, hp: number, maxHp: number): void {
@@ -1369,6 +1381,12 @@ function paintBuildingStatic(
   dmg: number,
   civ: CivId = 'central',
 ): void {
+  // 领地色晕：己方建筑群把地图染出归属感（此前只有 HQ/金矿有光晕）
+  const glow = g.createRadialGradient(0, 2, h * 0.4, 0, 2, h * 2.1);
+  glow.addColorStop(0, SIDE_DIM[side]);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = glow;
+  g.fillRect(-h * 2.1, -h * 2.1 - 2, h * 4.2, h * 4.2 + 4);
   // 底板 + 阵营描边
   g.fillStyle = SIDE_DIM[side];
   roundRect(g, -h, -h, h * 2, h * 2, 10);
