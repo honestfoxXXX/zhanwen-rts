@@ -5,11 +5,12 @@
  */
 import { UNIT_DEFS } from '../src/core/config';
 import { createWorld, stepWorld, type World, type Side } from '../src/core/sim';
-import { playerThink } from '../src/scriptedPlayer';
+import { playerThink, setForcedPlayers } from '../src/scriptedPlayer';
 import type { Difficulty } from '../src/core/types';
 
 const STEP = 1 / 60;
 const diff = (process.argv[2] ?? 'normal') as Difficulty;
+setForcedPlayers(3); // 本探针固定跑三人局
 const games = Number(process.argv[3] ?? 3);
 
 // 攻击关系累计：dmg[a][b] = a 对 b 造成的总伤害（含建筑）

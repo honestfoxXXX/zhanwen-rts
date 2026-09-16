@@ -67,25 +67,36 @@ cam.centerOn(MAP_W / 2, MAP_H / 2);
 
 let demoWorld: World | null = null;
 let demoAcc = 0;
+let demoWarm = false; // 预跑完成前以快进节奏推进，跑满后回到 0.85 倍速
 const DEMO_MAP = 0; // gate
 
 function seedDemoWorld(): void {
   const w = createWorld('normal', (Date.now() & 0x7fffffff) || 4242, DEMO_MAP);
   initRenderer(MAPS[DEMO_MAP]);
-  // 预跑 260s（典型对局 ~420s 收尾，留出活战场而不是结算前夕）：
-  // 菜单打开即有军队对撞，而不是从两家空城干瞪眼
-  let acc = 0;
-  for (let i = 0; i < 60 * 260 && !w.gameOver; i++) {
-    stepWorld(w, STEP);
-    acc += STEP;
-    if (acc >= 0.6) { acc = 0; playerThink(w); }
-    w.events.length = 0;
-  }
   demoWorld = w;
+  demoWarm = false;
   fx.clear();
   // 开镜即吸附战团（平滑跟随从这一帧起步，避免从地图角落慢慢爬）
   const f0 = demoFocus(w);
   if (f0) demoCam.centerOn(f0.x, f0.y);
+}
+
+/** 菜单战场的视觉事件：死亡/爆炸/挥砍让背景真的"在打"（不出声，menu 不 initAudio） */
+function drainDemoEvents(): void {
+  const w = demoWorld;
+  if (!w) return;
+  for (const e of w.events) {
+    if (e.type === 'die' && e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
+      fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
+      registerCorpse(e.x, e.y, e.r);
+    } else if (e.type === 'boom' && e.x !== undefined && e.y !== undefined) {
+      fx.boomEvent(e.x, e.y, e.big ?? false);
+    } else if (e.type === 'shot' && e.x !== undefined && e.y !== undefined) {
+      if (e.melee) fx.slash(e.x, e.y, e.big ?? false);
+      else fx.flash(e.x, e.y, e.big ?? false);
+    }
+  }
+  w.events.length = 0;
 }
 
 /** 最大战团：菜单镜头追这里，而不是两军质心（那儿常常是空地） */
@@ -107,12 +118,32 @@ function demoFocus(w: World): { x: number; y: number } | null {
 function updateDemoWorld(dtReal: number): void {
   if (!demoWorld) { seedDemoWorld(); return; }
   if (demoWorld.gameOver) { demoWorld = null; return; }
+  if (!demoWarm) {
+    // 预热：每帧快进 2.5s 模拟到中盘。一次性同步预跑会阻塞主线程数秒
+    // （实测开菜单黑屏/卡顿），分帧推进让玩家看着战场"快进成型"
+    for (let i = 0; i < 150 && !demoWorld.gameOver; i++) stepWorld(demoWorld, STEP);
+    playerThink(demoWorld);
+    drainDemoEvents();
+    demoCamTickFollow();
+    if (demoWorld.time >= 260) demoWarm = true;
+    return;
+  }
   demoAcc += Math.min(0.1, dtReal) * 0.85;
+  let thinkAcc = 0;
   while (demoAcc >= STEP) {
     stepWorld(demoWorld, STEP);
     demoAcc -= STEP;
+    thinkAcc += STEP;
+    if (thinkAcc >= 0.6) { thinkAcc = 0; playerThink(demoWorld); }
   }
-  demoWorld.events.length = 0;
+  drainDemoEvents();
+  if (++demoCamTick % 10 === 0) demoCamTickFollow(); // demoFocus O(n²)，10 帧一次足够
+}
+
+/** 镜头平滑跟随最大战团 */
+let demoCamTick = 0;
+function demoCamTickFollow(): void {
+  if (!demoWorld) return;
   const f = demoFocus(demoWorld);
   if (f) {
     const cx = demoCam.x + demoCam.viewW / 2, cy = demoCam.y + demoCam.viewH / 2;
@@ -480,8 +511,15 @@ function drainEvents(): void {
   if (state === 'play' && !world.gameOver && !world.alive[0]) {
     state = 'over';
     input.cancelMode();
-    hud.showResult(1, world, '你的城堡已陷落 —— 出局');
+    // 与 gameOver 路径同等的仪式：镜头推近己方陷落的城堡
+    cam.centerOn(world.spawns[0].x, world.spawns[0].y);
+    cam.zoomAt(1.7, cam.cssW / 2, cam.cssH / 2);
+    const wEnd = world;
     play('lose');
+    setTimeout(() => {
+      hud.showResult(1, wEnd, '你的城堡已陷落 —— 出局');
+      cam.resetZoom();
+    }, 1500);
   }
   if (ended && world.gameOver && state !== 'over') {
     state = 'over';
@@ -593,6 +631,7 @@ declare global {
 }
 window.__zw = {
   world: () => world,
+  demo: () => demoWorld ? { time: Math.round(demoWorld.time), units: demoWorld.units.filter(u => !u.dead).length, warm: demoWarm } : null,
   cam: () => cam,
   ui,
   findPath: (...a) => findPath(world ? world.blocked : new Uint8Array(0), ...a),
