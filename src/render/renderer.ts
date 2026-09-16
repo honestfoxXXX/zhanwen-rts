@@ -10,6 +10,7 @@ import { drawUnitDecals, drawUnitStatic, SIDE_DARK, SIDE_DIM, SIDE_FILL, UNIT_SH
 import { getSprite } from './spriteCache';
 import { flashOf } from './feedback';
 import { settings } from '../settings';
+import { drawCorpses } from './corpses';
 import type { BuildingType, Side } from '../core/types';
 
 // 阵营色统一从 shapes.ts 取，保证三方混战时各处颜色一致
@@ -905,6 +906,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
     }
   }
 
+  // 战场残骸：地表之上、单位之下（纯表现层，见 corpses.ts）
+  drawCorpses(sctx);
+
   const chrome = opts?.chrome !== false; // 菜单演示模式只关玩家专属 UI，世界照常画
   const r0 = w.rally[0];
   if (chrome) {
@@ -927,9 +931,9 @@ export function draw(ctx: CanvasRenderingContext2D, w: World, cam: Camera, ui: R
   sctx.closePath();
   sctx.fill();
   sctx.restore();
-
-  sctx.restore();
   }
+  // 集结旗块自带 save/restore；外层 if 只包作用域——
+  // 此前多插了一个 restore 把世界变换弹掉，其后建筑/单位全画到画布外（"只剩土地"bug）
 
   // 建造区轮廓（放置模式提示：告诉玩家边界在哪）
   if (ui.mode === 'place') {

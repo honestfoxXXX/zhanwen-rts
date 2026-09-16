@@ -306,18 +306,28 @@ function startMusic(): void {
     if (musicNext < now) musicNext = now + 0.1;
     const battle = battleLevel > 0.35;
     while (musicNext < now + 0.6) {
-      musicIdx = Math.max(0, Math.min(SCALE.length - 1, musicIdx + (Math.random() < 0.5 ? -1 : 1)));
-      pluck(SCALE[musicIdx], 0.05, musicNext);
       if (battle) {
+        // ── 战斗编曲：小调化快板。D 多利亚临时降 3 音变 D 小调色彩，
+        //    拨弦切分驱动 + 密集军鼓 + 高音急促回声，与和平段判若两曲
+        const MINOR = [146.83, 174.61, 196.0, 220.0, 233.08, 293.66];
+        musicIdx = Math.max(0, Math.min(MINOR.length - 1, musicIdx + (Math.random() < 0.6 ? 1 : -1)));
+        const root = MINOR[musicIdx];
+        pluck(root, 0.055, musicNext);
+        pluck(root * 1.5, 0.032, musicNext + 0.21);          // 五度回声
+        pluck(root * 2, 0.026, musicNext + 0.43);            // 高八度急促
         drum(musicNext + 0.42, 0.06);
-        if (Math.random() < 0.5) pluck(SCALE[Math.max(0, SCALE.length - 2)], 0.03, musicNext + 0.21);
-        // 烈度爬升：双鼓连击 + 低音 tom，把"打起来了"写进节奏
         if (battleLevel > 0.55) {
           drum(musicNext + 0.2, 0.045);
           drum(musicNext + 0.63, 0.05);
+          if (Math.random() < 0.4) pluck(MINOR[0] / 2, 0.04, musicNext + 0.1); // 低音 tom 强调
         }
+        musicNext += 0.85;
+      } else {
+        // ── 和平编曲：原五声慢板（留白呼吸）
+        musicIdx = Math.max(0, Math.min(SCALE.length - 1, musicIdx + (Math.random() < 0.5 ? -1 : 1)));
+        pluck(SCALE[musicIdx], 0.05, musicNext);
+        musicNext += 2.4;
       }
-      musicNext += battle ? 0.85 : 2.4;
     }
   }, 200);
 }

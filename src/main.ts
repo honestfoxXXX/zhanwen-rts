@@ -12,6 +12,7 @@ import { Hud, DENY_TEXT } from './ui/hud';
 import { playerThink } from './scriptedPlayer';
 import { initAudio, isMuted, play, setBattleIntensity, toggleMute, toggleMusic } from './sound';
 import { notifyHit, tickFlash, damageNumbersOn } from './render/feedback';
+import { registerCorpse, updateCorpses, clearCorpses } from './render/corpses';
 import { settings } from './settings';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -222,6 +223,7 @@ let civSel: CivId = 'central';
 function startGame(diff: World['difficulty'], players = 2): void {
   initAudio();
   demoWorld = null; // 菜单战场退役
+  clearCorpses();
   // 地形随种子轮换，避免每局都是同一张图；地面是预渲染的，换图必须重建。
   // 轮换池只取「与所选人数匹配」的图，否则 1v1 和 1v2 会被混在一起统计。
   const seed = (Date.now() & 0x7fffffff) || 12345;
@@ -433,6 +435,7 @@ function drainEvents(): void {
         combat += 2;
         if (e.x !== undefined && e.y !== undefined && e.r !== undefined && e.side !== undefined) {
           fx.dieEvent(e.x, e.y, e.r, e.side, e.big ?? false);
+          registerCorpse(e.x, e.y, e.r); // 战场残骸（纯表现层）
         }
         play('die', e.x !== undefined && e.y !== undefined ? volAt(e.x, e.y) : 1);
         break;
@@ -528,6 +531,7 @@ function loop(ts: number): void {
   }
   fx.update(dtReal);
   tickFlash(dtReal);
+  updateCorpses(dtReal);
   // 震动衰减：简谐衰减，比线性自然
   if (shakeT > 0) {
     shakeT -= dtReal;
