@@ -622,6 +622,7 @@ declare global {
   interface Window {
     __zw?: {
       world: () => World | null;
+      demo: () => { time: number; units: number; warm: boolean } | null;
       cam: () => import('./render/camera').Camera;
       ui: UIState;
       findPath: (x0: number, y0: number, x1: number, y1: number) => import('./core/types').Vec[] | null;
